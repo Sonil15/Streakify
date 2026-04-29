@@ -7,6 +7,7 @@ Handles sign-up, login, logout, and session-state management.
 import pyrebase
 import streamlit as st
 from datetime import datetime, timedelta
+import time
 from config import get_firebase_client_config
 import database as db
 
@@ -64,7 +65,7 @@ def signup(email: str, password: str, display_name: str) -> tuple[bool, str]:
 
         # Store session
         _set_session(uid, id_token, email, display_name)
-        _persist_login(refresh_token)
+        _queue_persist_login(refresh_token)
         return True, "Account created! Welcome to Streakify 🎉"
 
     except Exception as e:
@@ -87,7 +88,7 @@ def login(email: str, password: str) -> tuple[bool, str]:
         display_name = profile.get("display_name", email.split("@")[0]) if profile else email.split("@")[0]
 
         _set_session(uid, id_token, email, display_name)
-        _persist_login(refresh_token)
+        _queue_persist_login(refresh_token)
         return True, f"Welcome back, {display_name}! 👋"
 
     except Exception as e:
@@ -98,6 +99,7 @@ def logout():
     """Clear all auth-related session state."""
     for key in ["uid", "id_token", "email", "display_name", "logged_in"]:
         st.session_state.pop(key, None)
+    st.session_state.pop("_pending_refresh_token", None)
     _clear_persistent_login()
 
 
@@ -163,6 +165,18 @@ def send_password_reset(email: str) -> tuple[bool, str]:
         return True, "Password reset email sent! Check your inbox 📬"
     except Exception as e:
         return False, _parse_firebase_error(e)
+
+
+def flush_pending_persistent_login():
+    """
+    Persist any queued refresh token to cookies.
+    This runs early in app startup, outside form-submit timing.
+    """
+    refresh_token = st.session_state.get("_pending_refresh_token", "")
+    if not refresh_token:
+        return
+    _persist_login(refresh_token)
+    st.session_state.pop("_pending_refresh_token", None)
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +292,11 @@ def _persist_login(refresh_token: str):
     cookie_mgr.set(
         _refresh_cookie_name(),
         refresh_token,
+        key=f"set_{int(time.time() * 1000)}",
         expires_at=datetime.utcnow() + timedelta(days=30),
+        max_age=30 * 24 * 60 * 60,
+        secure=True,
+        same_site="lax",
     )
 
 
@@ -287,6 +305,12 @@ def _clear_persistent_login():
     if cookie_mgr is None:
         return
     cookie_mgr.delete(_refresh_cookie_name())
+
+
+def _queue_persist_login(refresh_token: str):
+    if not refresh_token:
+        return
+    st.session_state["_pending_refresh_token"] = refresh_token
 
 
 def _get_refresh_cookie_value() -> str:

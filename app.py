@@ -36,6 +36,7 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 
 inject_custom_css()
+auth.flush_pending_persistent_login()
 auth.try_restore_session()
 
 if not auth.is_logged_in():
