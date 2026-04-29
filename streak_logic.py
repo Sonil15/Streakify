@@ -17,6 +17,16 @@ from config import FREEZE_EARN_INTERVAL
 import database as db
 
 
+def _frequency(category: dict) -> str:
+    freq = (category.get("frequency") or "daily").lower()
+    return freq if freq in {"daily", "weekly"} else "daily"
+
+
+def _week_start(d: date) -> date:
+    """Return Monday of the week containing `d`."""
+    return d - timedelta(days=d.weekday())
+
+
 # ---------------------------------------------------------------------------
 # Public: reconcile a category's streak against today's date
 # ---------------------------------------------------------------------------
@@ -35,23 +45,28 @@ def reconcile_streak(uid: str, sphere_id: str, category: dict) -> dict:
     streak    = category.get("streak", 0)
     freezes   = category.get("freeze_count", 0)
     consec    = category.get("consecutive_days", 0)
+    frequency = _frequency(category)
 
     if last_str is None:
         # Brand-new category, nothing to reconcile.
         return category
 
     last_date = date.fromisoformat(last_str)
-
-    # How many full days have passed since last completion (excluding today)?
-    days_since = (today - last_date).days   # e.g. 0 = same day, 1 = yesterday
-
-    # Nothing missed: last activity was today or yesterday
-    if days_since <= 1:
-        return category
-
-    # days_since >= 2 means at least one day was missed.
-    # "missed days" = days_since - 1  (we don't count today yet)
-    missed = days_since - 1
+    if frequency == "weekly":
+        periods_since = (_week_start(today) - _week_start(last_date)).days // 7
+        # 0 = same week, 1 = previous week; both are safe
+        if periods_since <= 1:
+            return category
+        missed = periods_since - 1
+    else:
+        # How many full days have passed since last completion (excluding today)?
+        days_since = (today - last_date).days   # e.g. 0 = same day, 1 = yesterday
+        # Nothing missed: last activity was today or yesterday
+        if days_since <= 1:
+            return category
+        # days_since >= 2 means at least one day was missed.
+        # "missed days" = days_since - 1  (we don't count today yet)
+        missed = days_since - 1
 
     updates: dict = {}
 
@@ -89,22 +104,37 @@ def record_completion_for_today(uid: str, sphere_id: str, category: dict) -> dic
     streak   = category.get("streak", 0)
     freezes  = category.get("freeze_count", 0)
     consec   = category.get("consecutive_days", 0)
+    frequency = _frequency(category)
 
-    # Already recorded today
-    if last_str == today_str:
-        return category
+    if frequency == "weekly":
+        if last_str:
+            last_date = date.fromisoformat(last_str)
+            if _week_start(last_date) == _week_start(today):
+                return category  # already recorded this week
 
-    yesterday_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    if last_str == yesterday_str:
-        # Perfect consecutive day
-        streak += 1
-        consec += 1
+        previous_week_start = _week_start(today) - timedelta(days=7)
+        if last_str and _week_start(date.fromisoformat(last_str)) == previous_week_start:
+            streak += 1
+            consec += 1
+        else:
+            streak = streak + 1 if streak > 0 else 1
+            consec = 1
     else:
-        # Coming back after a gap (penalisation already applied by reconcile_streak).
-        # If streak survived via freezes, increment it; otherwise start from 1.
-        streak = streak + 1 if streak > 0 else 1
-        consec = 1   # restart the freeze-earning counter after any gap
+        # Already recorded today
+        if last_str == today_str:
+            return category
+
+        yesterday_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        if last_str == yesterday_str:
+            # Perfect consecutive day
+            streak += 1
+            consec += 1
+        else:
+            # Coming back after a gap (penalisation already applied by reconcile_streak).
+            # If streak survived via freezes, increment it; otherwise start from 1.
+            streak = streak + 1 if streak > 0 else 1
+            consec = 1   # restart the freeze-earning counter after any gap
 
     # Award freeze every FREEZE_EARN_INTERVAL consecutive days
     freeze_awarded = False
@@ -146,6 +176,39 @@ def check_if_still_active_today(
     today_str = db.today_ist()
     if category.get("last_completed_date") != today_str:
         return category  # today wasn't recorded yet, nothing to roll back
+
+    frequency = _frequency(category)
+    if frequency == "weekly":
+        today = date.fromisoformat(today_str)
+        week_start = _week_start(today)
+        week_end = week_start + timedelta(days=6)
+        still_active_this_week = db.has_completion_in_range(
+            uid,
+            sphere_id,
+            category_id,
+            week_start.strftime("%Y-%m-%d"),
+            week_end.strftime("%Y-%m-%d"),
+        )
+        if still_active_this_week:
+            return category
+
+        streak = max(0, category.get("streak", 1) - 1)
+        consec = max(0, category.get("consecutive_days", 1) - 1)
+        freezes = category.get("freeze_count", 0)
+        if (consec + 1) % FREEZE_EARN_INTERVAL == 0:
+            freezes = max(0, freezes - 1)
+
+        previous_period_date = week_start - timedelta(days=1)
+        new_last = previous_period_date.strftime("%Y-%m-%d") if streak > 0 else None
+        updates = {
+            "streak":               streak,
+            "freeze_count":         freezes,
+            "consecutive_days":     consec,
+            "last_completed_date":  new_last,
+        }
+        db.update_category(uid, sphere_id, category_id, updates)
+        category.update(updates)
+        return category
 
     # Reverse today's streak extension
     today  = date.fromisoformat(today_str)

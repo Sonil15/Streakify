@@ -149,11 +149,21 @@ def get_categories(uid: str, sphere_id: str) -> list[dict]:
     return result
 
 
-def create_category(uid: str, sphere_id: str, name: str, emoji: str) -> str:
+def create_category(
+    uid: str,
+    sphere_id: str,
+    name: str,
+    emoji: str,
+    frequency: str = "daily",
+) -> str:
+    frequency = (frequency or "daily").lower()
+    if frequency not in {"daily", "weekly"}:
+        frequency = "daily"
     ref = _cats_ref(uid, sphere_id).document()
     ref.set({
         "name":                     name,
         "emoji":                    emoji,
+        "frequency":                frequency,  # "daily" | "weekly"
         "streak":                   0,
         "freeze_count":             0,
         "consecutive_days":         0,   # days towards next freeze
@@ -282,6 +292,30 @@ def get_completion_history(
         tasks_done = d.get("completed_tasks", [])
         history[doc.id] = len(tasks_done) > 0
     return history
+
+
+def has_completion_in_range(
+    uid: str,
+    sphere_id: str,
+    category_id: str,
+    start_date_str: str,
+    end_date_str: str,
+) -> bool:
+    """
+    Return True if at least one completion doc in [start_date_str, end_date_str]
+    has one or more completed tasks.
+    """
+    docs = (
+        _completions_ref(uid, sphere_id, category_id)
+        .where("date", ">=", start_date_str)
+        .where("date", "<=", end_date_str)
+        .stream()
+    )
+    for doc in docs:
+        tasks_done = doc.to_dict().get("completed_tasks", [])
+        if tasks_done:
+            return True
+    return False
 
 
 def get_all_categories_for_user(uid: str) -> list[dict]:

@@ -14,7 +14,7 @@ import os
 import sys
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import pytz
 from dotenv import load_dotenv
 
@@ -73,6 +73,17 @@ def today_ist() -> str:
     return datetime.now(tz).strftime("%Y-%m-%d")
 
 
+def is_weekend_ist(date_str: str) -> bool:
+    d = date.fromisoformat(date_str)
+    # Monday=0 ... Sunday=6
+    return d.weekday() >= 5
+
+
+def week_start_str(date_str: str) -> str:
+    d = date.fromisoformat(date_str)
+    return (d - timedelta(days=d.weekday())).strftime("%Y-%m-%d")
+
+
 # ---------------------------------------------------------------------------
 # Firestore query helpers
 # ---------------------------------------------------------------------------
@@ -113,6 +124,29 @@ def get_today_completion(fdb, uid: str, sphere_id: str, category_id: str, date_s
     return doc.to_dict().get("completed_tasks", [])
 
 
+def has_completion_in_range(
+    fdb,
+    uid: str,
+    sphere_id: str,
+    category_id: str,
+    start_date_str: str,
+    end_date_str: str,
+) -> bool:
+    docs = (
+        fdb.collection("users").document(uid)
+        .collection("spheres").document(sphere_id)
+        .collection("categories").document(category_id)
+        .collection("completions")
+        .where("date", ">=", start_date_str)
+        .where("date", "<=", end_date_str)
+        .stream()
+    )
+    for doc in docs:
+        if doc.to_dict().get("completed_tasks", []):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Main logic
 # ---------------------------------------------------------------------------
@@ -146,15 +180,27 @@ def run_reminders():
                 sphere_name  = sphere.get("name", "")
                 streak       = cat.get("streak", 0)
                 freeze_count = cat.get("freeze_count", 0)
+                frequency    = (cat.get("frequency") or "daily").lower()
 
                 if streak == 0:
                     # No active streak to protect
                     continue
 
-                completed = get_today_completion(fdb, uid, sid, cid, today)
+                if frequency == "weekly":
+                    if not is_weekend_ist(today):
+                        print(f"    ⏭ {sphere_name} › {cat_name}: weekly reminder skipped (weekday)")
+                        continue
+                    week_start = week_start_str(today)
+                    week_end = (date.fromisoformat(week_start) + timedelta(days=6)).strftime("%Y-%m-%d")
+                    completed = has_completion_in_range(fdb, uid, sid, cid, week_start, week_end)
+                else:
+                    completed = bool(get_today_completion(fdb, uid, sid, cid, today))
 
                 if completed:
-                    print(f"    ✅ {sphere_name} › {cat_name}: done for today")
+                    print(
+                        f"    ✅ {sphere_name} › {cat_name}: done for "
+                        f"{'this week' if frequency == 'weekly' else 'today'}"
+                    )
                     continue
 
                 # At risk!
@@ -162,10 +208,11 @@ def run_reminders():
                     # DANGER: streak will reset at midnight
                     msg = (
                         f"🚨 <b>Streakify Alert!</b>\n\n"
-                        f"Hey {name}! You haven't completed any tasks in "
-                        f"<b>{sphere_name} › {cat_name}</b> today.\n\n"
+                        f"Hey {name}! You haven't completed any tasks in <b>{sphere_name} › {cat_name}</b> "
+                        f"{'this week' if frequency == 'weekly' else 'today'}.\n\n"
                         f"⚠️ You have <b>0 freezes left</b> — your "
-                        f"<b>{streak}-day streak</b> will reset at midnight tonight!\n\n"
+                        f"<b>{streak}-{'week' if frequency == 'weekly' else 'day'} streak</b> "
+                        f"will reset at midnight tonight!\n\n"
                         f"Quick, go log a task now! 💪"
                     )
                     print(f"    🚨 DANGER — {sphere_name} › {cat_name} (streak={streak}, freezes=0)")
@@ -173,8 +220,8 @@ def run_reminders():
                     # Will auto-use a freeze, but worth a nudge
                     msg = (
                         f"⏰ <b>Streakify Reminder!</b>\n\n"
-                        f"Hey {name}! Nothing logged yet in "
-                        f"<b>{sphere_name} › {cat_name}</b> today.\n\n"
+                        f"Hey {name}! Nothing logged yet in <b>{sphere_name} › {cat_name}</b> "
+                        f"{'this week' if frequency == 'weekly' else 'today'}.\n\n"
                         f"❄️ A freeze will be used automatically tonight "
                         f"(you have {freeze_count} left).\n\n"
                         f"But why waste a freeze? Smash a task now! 🔥"

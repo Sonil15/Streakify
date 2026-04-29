@@ -157,6 +157,8 @@ with tab_dash:
             for cat in cats:
                 cid   = cat["id"]
                 tasks = db.get_tasks(uid, sid, cid)
+                frequency = (cat.get("frequency") or "daily").lower()
+                cadence_label = "week" if frequency == "weekly" else "day"
 
                 # Reconcile streak (handles missed days automatically)
                 cat = sl.reconcile_streak(uid, sid, cat)
@@ -170,7 +172,7 @@ with tab_dash:
 
                 with st.expander(
                     f"{cat.get('emoji','📌')} **{cat.get('name','')}** — "
-                    f"{sl.streak_emoji(cat.get('streak',0))} **{cat.get('streak',0)} day streak** "
+                    f"{sl.streak_emoji(cat.get('streak',0))} **{cat.get('streak',0)} {cadence_label} streak** "
                     f"| {sl.freeze_display(cat.get('freeze_count',0))} "
                     f"| {status_icon}",
                     expanded=not is_done_today,
@@ -302,12 +304,18 @@ with tab_habits:
                 # ── Add category ────────────────────────────────────
                 with st.form(f"add_cat_{sid}"):
                     st.markdown("**Add Category:**")
-                    cc1, cc2, cc3 = st.columns([3, 1, 1])
+                    cc1, cc2, cc3, cc4 = st.columns([3, 1, 2, 1])
                     with cc1:
                         cat_name = st.text_input("Category Name", placeholder="e.g. Diet, Coding", key=f"cn_{sid}")
                     with cc2:
                         cat_emoji = st.text_input("Emoji", placeholder="🥗", max_chars=4, key=f"ce_{sid}")
                     with cc3:
+                        cat_frequency = st.selectbox(
+                            "Cadence",
+                            options=["Daily", "Weekly"],
+                            key=f"cf_{sid}",
+                        )
+                    with cc4:
                         st.markdown("<br>", unsafe_allow_html=True)
                         cat_submit = st.form_submit_button("Add ➕")
 
@@ -316,7 +324,11 @@ with tab_habits:
                             st.error("Category name required.")
                         else:
                             db.create_category(
-                                uid, sid, cat_name.strip(), cat_emoji.strip() or "📌"
+                                uid,
+                                sid,
+                                cat_name.strip(),
+                                cat_emoji.strip() or "📌",
+                                frequency=cat_frequency.lower(),
                             )
                             st.success(f"Category '{cat_name}' added!")
                             st.rerun()
@@ -332,7 +344,9 @@ with tab_habits:
                         f"<div style='margin-top:12px; font-weight:700; font-size:1.05rem;'>"
                         f"{cemoji} {cname}"
                         f"<span style='font-size:0.8rem; font-weight:400; color:{COLORS['text_muted']}; margin-left:8px;'>"
-                        f"🔥 {cat.get('streak',0)} streak | ❄️ {cat.get('freeze_count',0)} freezes"
+                        f"🔥 {cat.get('streak',0)} streak"
+                        f" ({'weekly' if (cat.get('frequency') or 'daily').lower() == 'weekly' else 'daily'})"
+                        f" | ❄️ {cat.get('freeze_count',0)} freezes"
                         f"</span></div>",
                         unsafe_allow_html=True,
                     )

@@ -28,6 +28,8 @@ def render_streak_card(category: dict, show_progress: bool = True):
     streak = category.get("streak", 0)
     freeze = category.get("freeze_count", 0)
     consec = category.get("consecutive_days", 0)
+    frequency = (category.get("frequency") or "daily").lower()
+    cadence_label = "week" if frequency == "weekly" else "day"
 
     color          = sl.streak_color(streak)
     streak_icon    = sl.streak_emoji(streak)
@@ -46,7 +48,7 @@ def render_streak_card(category: dict, show_progress: bool = True):
                         <span class="streak-number" style="color:{color};">
                             {streak}
                         </span>
-                        <span class="streak-label"> day streak {streak_icon}</span>
+                        <span class="streak-label"> {cadence_label} streak {streak_icon}</span>
                     </div>
                 </div>
                 <div style="text-align:right;">
