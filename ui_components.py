@@ -130,8 +130,19 @@ def render_heatmap(history: dict[str, bool], title: str, weeks: int = 26):
 
     day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-    # Render title outside plot to avoid overlap
-    st.markdown(f"**{title}**")
+    completed_days = sum(1 for v in history.values() if v)
+    total_tracked_days = max(len(history), 1)
+    completion_rate = int((completed_days / total_tracked_days) * 100)
+
+    st.markdown(
+        f"""
+        <div class="heatmap-card-header">
+            <div class="heatmap-title">{title}</div>
+            <div class="heatmap-stat">🔥 {completion_rate}% consistency</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     fig = go.Figure(
         go.Heatmap(
@@ -141,23 +152,24 @@ def render_heatmap(history: dict[str, bool], title: str, weeks: int = 26):
             text=labels,
             hovertemplate="%{text}<extra></extra>",
             colorscale=[
-                [0.00, "#F3F3F8"],          # empty / future
-                [0.18, "#E8E0FF"],          # no completion
+                [0.00, "#F4F7EF"],          # empty / future
+                [0.18, "#E6F4D7"],          # no completion
+                [0.55, "#B9E78F"],          # mild
                 [1.00, COLORS["primary"]],  # completed
             ],
             zmin=0,
             zmax=1,
             showscale=False,
-            xgap=3,
-            ygap=3,
+            xgap=4,
+            ygap=4,
         )
     )
 
     fig.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        margin=dict(l=40, r=10, t=8, b=18),
-        height=180,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=38, r=12, t=6, b=18),
+        height=190,
         xaxis=dict(
             tickmode="array",
             tickvals=tickvals,
@@ -166,7 +178,7 @@ def render_heatmap(history: dict[str, bool], title: str, weeks: int = 26):
             zeroline=False,
             showline=False,
             ticks="",
-            tickfont=dict(size=10, family="Nunito"),
+            tickfont=dict(size=10, family="Nunito", color="#7A8B95"),
             side="top",
         ),
         yaxis=dict(
@@ -174,7 +186,7 @@ def render_heatmap(history: dict[str, bool], title: str, weeks: int = 26):
             zeroline=False,
             showline=False,
             ticks="",
-            tickfont=dict(size=10, family="Nunito"),
+            tickfont=dict(size=10, family="Nunito", color="#7A8B95"),
             autorange="reversed",
         ),
     )

@@ -11,6 +11,7 @@ Tabs:
 
 import streamlit as st
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Load .env for local dev (no-op on Streamlit Cloud)
 load_dotenv()
@@ -51,6 +52,27 @@ user     = auth.get_current_user()
 uid      = user["uid"]
 dname    = user["display_name"]
 today    = db.today_ist()
+weekday  = datetime.strptime(today, "%Y-%m-%d").strftime("%A")
+date_obj = datetime.strptime(today, "%Y-%m-%d").date()
+pretty_date = date_obj.strftime("%d %b, %Y")
+
+MOTIVATION_QUOTES = [
+    "One small win today keeps your momentum strong.",
+    "Show up today, and tomorrow gets easier.",
+    "Consistency beats intensity every single time.",
+    "Tiny actions compound into massive results.",
+    "Progress, not perfection, keeps streaks alive.",
+    "A 5-minute start can change your whole day.",
+    "Discipline is just self-respect in action.",
+    "Do the minimum, but never miss the day.",
+    "Small promises kept build unshakable confidence.",
+    "Your future self is built by today's habits.",
+    "Keep the chain alive - even with one step.",
+    "Momentum is earned in ordinary moments.",
+    "Win the day first, then win the week.",
+    "When motivation fades, routine carries you forward.",
+]
+quote_of_day = MOTIVATION_QUOTES[date_obj.toordinal() % len(MOTIVATION_QUOTES)]
 
 # ---------------------------------------------------------------------------
 # Top navigation bar
@@ -59,11 +81,15 @@ today    = db.today_ist()
 with st.sidebar:
     st.markdown(
         f"""
-        <div style='text-align:center; padding:20px 0 10px;'>
-            <div style='font-size:2.5rem;'>🔥</div>
-            <div style='font-size:1.2rem; font-weight:800; color:{COLORS["primary"]};'>Streakify</div>
-            <div style='font-size:0.85rem; color:{COLORS["text_muted"]}; margin-top:4px;'>
+        <div class='streak-card' style='padding:14px 12px;'>
+            <div style='font-size:2.2rem;'>🔥</div>
+            <div style='font-size:1.25rem; font-weight:900; color:{COLORS["primary"]};'>Streakify</div>
+            <div style='font-size:0.84rem; color:{COLORS["text_muted"]}; margin-top:4px;'>
                 Hi, {dname}! 👋
+            </div>
+            <div class='duo-chip-row'>
+                <span class='duo-chip'>⚡ Consistency</span>
+                <span class='duo-chip'>❄️ Freezes</span>
             </div>
         </div>
         """,
@@ -89,10 +115,18 @@ tab_dash, tab_habits, tab_acct, tab_settings = st.tabs(
 # ============================================================
 with tab_dash:
     st.markdown(
-        f"<div class='page-title'>Good day, {dname}! 🌟</div>",
+        f"""
+        <div class='duo-hero'>
+            <div class='duo-hero-title'>Hey {dname}, keep the streak alive 🔥</div>
+            <div class='duo-hero-sub'>{quote_of_day}</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-    st.caption(f"📅 Today is **{today}** (IST)")
+    st.markdown(
+        f"<div style='text-align:center;'><span class='duo-date-pill'>📅 {weekday}, {pretty_date} (IST)</span></div>",
+        unsafe_allow_html=True,
+    )
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
 
     spheres = db.get_spheres(uid)
@@ -104,7 +138,7 @@ with tab_dash:
         )
     else:
         # ── Daily quick-log ──────────────────────────────────────────
-        st.markdown("### ✅ Today's Tasks", unsafe_allow_html=True)
+        st.markdown("### Today's Tasks", unsafe_allow_html=True)
         st.caption("Check off at least one task per category to keep your streak alive!")
 
         any_new_completion = False
@@ -204,7 +238,7 @@ with tab_dash:
 
         # ── Heatmaps ─────────────────────────────────────────────────
         st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
-        st.markdown("###Heatmaps", unsafe_allow_html=True)
+        st.markdown("<div class='section-header'>Heatmaps</div>", unsafe_allow_html=True)
 
         for sphere in spheres:
             sid  = sphere["id"]
@@ -421,7 +455,7 @@ with tab_acct:
 
             # ── Partner heatmaps (read-only) ──────────────────────
             st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
-            st.markdown("###Partner's Heatmaps")
+            st.markdown("<div class='section-header'>Partner Heatmaps</div>", unsafe_allow_html=True)
 
             for sphere in partner_spheres:
                 sid  = sphere["id"]

@@ -196,11 +196,11 @@ def render_auth_page():
 
     st.markdown(
         """
-        <div style='text-align:center; padding: 2rem 0 1rem;'>
-            <span style='font-size: 3.5rem;'>🔥</span>
-            <h1 style='font-size:2.8rem; font-weight:800; color:#6C63FF; margin:0;'>Streakify</h1>
-            <p style='color:#888; font-size:1.05rem; margin-top:0.3rem;'>
-                Build habits. Break limits. Keep your streak. ✨
+        <div class='duo-auth-hero'>
+            <span style='font-size: 3.1rem;'>🔥</span>
+            <h1>Streakify</h1>
+            <p>
+                Tiny daily wins. Big long-term streaks. ✨
             </p>
         </div>
         """,
