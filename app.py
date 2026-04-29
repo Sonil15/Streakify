@@ -20,6 +20,7 @@ import auth
 import database as db
 import streak_logic as sl
 import ui_components as ui
+import ai_planner
 from styles import inject_custom_css, COLORS
 
 # ---------------------------------------------------------------------------
@@ -79,8 +80,8 @@ EMOJI_OPTIONS = ["None", "💪", "🏃", "🧘", "🥗", "📚", "💼", "🧠",
 # Main tabs
 # ---------------------------------------------------------------------------
 
-tab_dash, tab_habits, tab_acct, tab_settings = st.tabs(
-    ["🏠 Dashboard", "📋 Habits", "👥 Accountability", "⚙️ Settings"]
+tab_dash, tab_habits, tab_plan, tab_acct, tab_settings = st.tabs(
+    ["🏠 Dashboard", "📋 Habits", "🧭 Grand Plan", "👥 Accountability", "⚙️ Settings"]
 )
 
 
@@ -380,7 +381,132 @@ with tab_habits:
 
 
 # ============================================================
-# TAB 3 – ACCOUNTABILITY
+# TAB 3 – GRAND PLAN
+# ============================================================
+with tab_plan:
+    st.markdown("<div class='page-title'>🧭 Grand Plan</div>", unsafe_allow_html=True)
+    st.caption("Write your long-term plan here. You can update it anytime.")
+    st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
+
+    profile = db.get_user_profile(uid) or {}
+    current_plan = profile.get("grand_plan", "")
+
+    with st.form("grand_plan_form"):
+        plan_text = st.text_area(
+            "Your Plan",
+            value=current_plan,
+            height=320,
+            placeholder="Write your vision, milestones, and next steps...",
+        )
+        save_plan = st.form_submit_button("Save Grand Plan")
+
+    if save_plan:
+        db.update_user_profile(uid, {"grand_plan": plan_text.strip()})
+        st.success("Grand Plan saved.")
+        st.rerun()
+
+    st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
+    st.markdown("### 🤖 AI Planner")
+    st.caption(
+        "Create-only assistant: it can add new categories/tasks from your plan. "
+        "It will not create new spheres or delete anything."
+    )
+    ai_instruction = st.text_input(
+        "Instruction for AI",
+        value="Auto generate the tasks in my grand plan for the next week",
+        placeholder="e.g. Create new category and tasks for next week from my grand plan",
+    )
+
+    if st.button("Generate Preview from Grand Plan"):
+        latest_profile = db.get_user_profile(uid) or {}
+        latest_plan = latest_profile.get("grand_plan", "")
+        if not latest_plan.strip():
+            st.error("Your Grand Plan is empty. Please add plan text first.")
+        else:
+            try:
+                with st.spinner("AI is generating your weekly structure..."):
+                    spheres = db.get_spheres(uid)
+                    context = {"spheres": []}
+                    for sphere in spheres:
+                        sid = sphere["id"]
+                        cats = db.get_categories(uid, sid)
+                        context["spheres"].append(
+                            {
+                                "name": sphere.get("name", ""),
+                                "emoji": sphere.get("emoji", ""),
+                                "categories": [
+                                    {
+                                        "name": c.get("name", ""),
+                                        "frequency": (c.get("frequency") or "daily").lower(),
+                                        "tasks": [t.get("name", "") for t in db.get_tasks(uid, sid, c["id"])],
+                                    }
+                                    for c in cats
+                                ],
+                            }
+                        )
+                    generated = ai_planner.generate_structure(latest_plan, ai_instruction, context)
+                    preview = ai_planner.get_creation_preview(uid, generated)
+                st.session_state["ai_plan_generated"] = generated
+                st.session_state["ai_plan_preview"] = preview
+                st.session_state["ai_plan_instruction"] = ai_instruction
+            except Exception as e:
+                st.error(f"AI planner failed: {e}")
+
+    preview = st.session_state.get("ai_plan_preview")
+    generated = st.session_state.get("ai_plan_generated")
+    if preview and generated:
+        st.markdown("#### Preview")
+        counts = preview.get("counts", {})
+        st.info(
+            f"Will create {counts.get('categories', 0)} categories, "
+            f"{counts.get('tasks', 0)} tasks. "
+            f"Will skip {counts.get('spheres_skipped_missing', 0)} unknown spheres."
+        )
+
+        for s in preview.get("spheres_skipped_missing", []):
+            label = f"{s.get('emoji','')} {s.get('name','')}".strip()
+            st.markdown(f"- Skipped unknown sphere (not created): **{label}**")
+        for c in preview.get("categories_to_create", []):
+            label = f"{c.get('emoji','')} {c.get('name','')}".strip()
+            st.markdown(
+                f"- New category in **{c.get('sphere','')}**: "
+                f"**{label}** ({c.get('frequency','daily')})"
+            )
+
+        with st.expander("Tasks to create", expanded=False):
+            for t in preview.get("tasks_to_create", []):
+                st.markdown(
+                    f"- **{t.get('sphere','')} › {t.get('category','')}**: {t.get('name','')}"
+                )
+
+        col_apply, col_clear = st.columns([2, 1])
+        with col_apply:
+            if st.button("Apply Proposed Changes"):
+                try:
+                    summary = ai_planner.apply_generated_structure(uid, generated)
+                    st.success(
+                        "AI plan applied. "
+                        f"Created {summary['categories_created']} categories, "
+                        f"{summary['tasks_created']} tasks. "
+                        f"Skipped {summary['tasks_skipped_existing']} existing tasks and "
+                        f"{summary['spheres_skipped_missing']} unknown spheres."
+                    )
+                    st.session_state.pop("ai_plan_generated", None)
+                    st.session_state.pop("ai_plan_preview", None)
+                    st.session_state.pop("ai_plan_instruction", None)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Apply failed: {e}")
+        with col_clear:
+            if st.button("Discard Preview"):
+                st.session_state.pop("ai_plan_generated", None)
+                st.session_state.pop("ai_plan_preview", None)
+                st.session_state.pop("ai_plan_instruction", None)
+                st.rerun()
+
+
+# ============================================================
+# TAB 4 – ACCOUNTABILITY
 # ============================================================
 with tab_acct:
     st.markdown("<div class='page-title'>👥 Accountability Partner</div>", unsafe_allow_html=True)
@@ -481,7 +607,7 @@ with tab_acct:
 
 
 # ============================================================
-# TAB 4 – SETTINGS
+# TAB 5 – SETTINGS
 # ============================================================
 with tab_settings:
     st.markdown("<div class='page-title'>⚙️ Settings</div>", unsafe_allow_html=True)

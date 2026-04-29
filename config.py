@@ -87,6 +87,13 @@ def get_telegram_token() -> str:
     return os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 
+def get_groq_api_key() -> str:
+    token = _try_streamlit_secrets("GROQ_API_KEY")
+    if token:
+        return str(token)
+    return os.getenv("GROQ_API_KEY", "")
+
+
 # ---------------------------------------------------------------------------
 # App-level constants
 # ---------------------------------------------------------------------------
