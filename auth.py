@@ -6,8 +6,14 @@ Handles sign-up, login, logout, and session-state management.
 
 import pyrebase
 import streamlit as st
+from datetime import datetime, timedelta
 from config import get_firebase_client_config
 import database as db
+
+try:
+    import extra_streamlit_components as stx
+except ModuleNotFoundError:
+    stx = None
 
 
 # ---------------------------------------------------------------------------
@@ -24,6 +30,13 @@ def _get_pyrebase_auth():
 def get_auth():
     return _get_pyrebase_auth()
 
+def _get_cookie_manager():
+    if stx is None:
+        return None
+    if "_cookie_manager" not in st.session_state:
+        st.session_state["_cookie_manager"] = stx.CookieManager()
+    return st.session_state["_cookie_manager"]
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -39,6 +52,7 @@ def signup(email: str, password: str, display_name: str) -> tuple[bool, str]:
         user = auth.create_user_with_email_and_password(email, password)
         uid = user["localId"]
         id_token = user["idToken"]
+        refresh_token = user.get("refreshToken", "")
 
         # Persist a Firestore user profile
         db.create_user_profile(uid, {
@@ -50,6 +64,7 @@ def signup(email: str, password: str, display_name: str) -> tuple[bool, str]:
 
         # Store session
         _set_session(uid, id_token, email, display_name)
+        _persist_login(refresh_token)
         return True, "Account created! Welcome to Streakify 🎉"
 
     except Exception as e:
@@ -66,11 +81,13 @@ def login(email: str, password: str) -> tuple[bool, str]:
         user = auth.sign_in_with_email_and_password(email, password)
         uid = user["localId"]
         id_token = user["idToken"]
+        refresh_token = user.get("refreshToken", "")
 
         profile = db.get_user_profile(uid)
         display_name = profile.get("display_name", email.split("@")[0]) if profile else email.split("@")[0]
 
         _set_session(uid, id_token, email, display_name)
+        _persist_login(refresh_token)
         return True, f"Welcome back, {display_name}! 👋"
 
     except Exception as e:
@@ -81,6 +98,7 @@ def logout():
     """Clear all auth-related session state."""
     for key in ["uid", "id_token", "email", "display_name", "logged_in"]:
         st.session_state.pop(key, None)
+    _clear_persistent_login()
 
 
 def is_logged_in() -> bool:
@@ -96,6 +114,49 @@ def get_current_user() -> dict | None:
         "email":        st.session_state.get("email"),
         "display_name": st.session_state.get("display_name"),
     }
+
+
+def try_restore_session() -> bool:
+    """
+    Restore auth session from a long-lived refresh-token cookie.
+    Returns True when a valid session is available.
+    """
+    if is_logged_in():
+        return True
+
+    cookie_mgr = _get_cookie_manager()
+    if cookie_mgr is None:
+        return False
+    refresh_token = cookie_mgr.get(_refresh_cookie_name())
+    if not refresh_token:
+        return False
+
+    auth = get_auth()
+    try:
+        refreshed = auth.refresh(refresh_token)
+        id_token = refreshed["idToken"]
+        new_refresh = refreshed.get("refreshToken", refresh_token)
+        uid = refreshed.get("userId") or refreshed.get("localId")
+        if not uid:
+            _clear_persistent_login()
+            return False
+
+        account_info = auth.get_account_info(id_token)
+        users = account_info.get("users", [])
+        email = users[0].get("email", "") if users else ""
+
+        profile = db.get_user_profile(uid)
+        display_name = (
+            profile.get("display_name", email.split("@")[0])
+            if profile else email.split("@")[0]
+        )
+
+        _set_session(uid, id_token, email, display_name)
+        _persist_login(new_refresh)
+        return True
+    except Exception:
+        _clear_persistent_login()
+        return False
 
 
 def send_password_reset(email: str) -> tuple[bool, str]:
@@ -205,6 +266,30 @@ def _set_session(uid: str, id_token: str, email: str, display_name: str):
     st.session_state["email"]        = email
     st.session_state["display_name"] = display_name
     st.session_state["logged_in"]    = True
+
+
+def _refresh_cookie_name() -> str:
+    return "streakify_refresh_token"
+
+
+def _persist_login(refresh_token: str):
+    if not refresh_token:
+        return
+    cookie_mgr = _get_cookie_manager()
+    if cookie_mgr is None:
+        return
+    cookie_mgr.set(
+        _refresh_cookie_name(),
+        refresh_token,
+        expires_at=datetime.utcnow() + timedelta(days=30),
+    )
+
+
+def _clear_persistent_login():
+    cookie_mgr = _get_cookie_manager()
+    if cookie_mgr is None:
+        return
+    cookie_mgr.delete(_refresh_cookie_name())
 
 
 def _parse_firebase_error(e: Exception) -> str:
