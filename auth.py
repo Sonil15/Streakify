@@ -8,6 +8,7 @@ import pyrebase
 import streamlit as st
 from datetime import datetime, timedelta
 import time
+import json
 from config import get_firebase_client_config
 import database as db
 
@@ -15,6 +16,11 @@ try:
     import extra_streamlit_components as stx
 except ModuleNotFoundError:
     stx = None
+
+try:
+    from streamlit_js_eval import streamlit_js_eval
+except ModuleNotFoundError:
+    streamlit_js_eval = None
 
 
 # ---------------------------------------------------------------------------
@@ -283,9 +289,15 @@ def _refresh_cookie_name() -> str:
     return "streakify_refresh_token"
 
 
+def _refresh_storage_key() -> str:
+    return "streakify_refresh_token"
+
+
 def _persist_login(refresh_token: str):
     if not refresh_token:
         return
+    _persist_login_local_storage(refresh_token)
+
     cookie_mgr = _get_cookie_manager()
     if cookie_mgr is None:
         return
@@ -301,6 +313,8 @@ def _persist_login(refresh_token: str):
 
 
 def _clear_persistent_login():
+    _clear_local_storage_login()
+
     cookie_mgr = _get_cookie_manager()
     if cookie_mgr is None:
         return
@@ -330,10 +344,51 @@ def _get_refresh_cookie_value() -> str:
         # st.context may be unavailable in some Streamlit versions.
         pass
 
+    local_storage_token = _get_local_storage_login()
+    if local_storage_token:
+        return local_storage_token
+
     cookie_mgr = _get_cookie_manager()
     if cookie_mgr is None:
         return ""
     return cookie_mgr.get(cookie_name) or ""
+
+
+def _persist_login_local_storage(refresh_token: str):
+    if not refresh_token or streamlit_js_eval is None:
+        return
+    st.session_state["_refresh_token_local_cache"] = refresh_token
+    token_js = json.dumps(refresh_token)
+    streamlit_js_eval(
+        js_expressions=f"window.localStorage.setItem('{_refresh_storage_key()}', {token_js})",
+        key=f"ls_set_refresh_{int(time.time() * 1000)}",
+    )
+
+
+def _get_local_storage_login() -> str:
+    cached = st.session_state.get("_refresh_token_local_cache", "")
+    if cached:
+        return cached
+    if streamlit_js_eval is None:
+        return ""
+    token = streamlit_js_eval(
+        js_expressions=f"window.localStorage.getItem('{_refresh_storage_key()}')",
+        key="ls_get_refresh_token",
+    )
+    if token:
+        st.session_state["_refresh_token_local_cache"] = token
+        return token
+    return ""
+
+
+def _clear_local_storage_login():
+    st.session_state.pop("_refresh_token_local_cache", None)
+    if streamlit_js_eval is None:
+        return
+    streamlit_js_eval(
+        js_expressions=f"window.localStorage.removeItem('{_refresh_storage_key()}')",
+        key=f"ls_clear_refresh_{int(time.time() * 1000)}",
+    )
 
 
 def _parse_firebase_error(e: Exception) -> str:
