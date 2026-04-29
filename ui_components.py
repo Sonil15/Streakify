@@ -89,7 +89,12 @@ def render_mini_stat_row(label: str, value, icon: str = ""):
 # GitHub-style heatmap
 # ---------------------------------------------------------------------------
 
-def render_heatmap(history: dict[str, bool], title: str, weeks: int = 26):
+def render_heatmap(
+    history: dict[str, bool],
+    title: str,
+    weeks: int = 26,
+    chart_key: str | None = None,
+):
     """
     Cleaner GitHub-style heatmap:
     - sparse month labels (no overlap)
@@ -191,7 +196,12 @@ def render_heatmap(history: dict[str, bool], title: str, weeks: int = 26):
         ),
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={"displayModeBar": False},
+        key=chart_key,
+    )
 
 # ---------------------------------------------------------------------------
 # Task checklist

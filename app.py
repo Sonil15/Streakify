@@ -249,6 +249,7 @@ with tab_dash:
                     history,
                     title=f"{sphere.get('emoji','')} {sphere.get('name','')} › "
                           f"{cat.get('emoji','')} {cat.get('name','')}",
+                    chart_key=f"heatmap_self_{sid}_{cat['id']}",
                 )
 
 
@@ -466,6 +467,7 @@ with tab_acct:
                         history,
                         title=f"{sphere.get('emoji','')} {sphere.get('name','')} › "
                               f"{cat.get('emoji','')} {cat.get('name','')}",
+                        chart_key=f"heatmap_partner_{sid}_{cat['id']}",
                     )
 
 
