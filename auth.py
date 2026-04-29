@@ -215,7 +215,7 @@ def render_auth_page():
             st.markdown("### Welcome back! 👋")
             email    = st.text_input("Email", placeholder="you@example.com")
             password = st.text_input("Password", type="password", placeholder="••••••••")
-            submitted = st.form_submit_button("Login 🚀", use_container_width=True)
+            submitted = st.form_submit_button("Login 🚀")
 
         if submitted:
             if not email or not password:
@@ -237,7 +237,7 @@ def render_auth_page():
             email    = st.text_input("Email", placeholder="you@example.com", key="su_email")
             password = st.text_input("Password", type="password", placeholder="min 6 characters", key="su_pw")
             confirm  = st.text_input("Confirm Password", type="password", placeholder="same as above", key="su_confirm")
-            submitted = st.form_submit_button("Create Account 🎉", use_container_width=True)
+            submitted = st.form_submit_button("Create Account 🎉")
 
         if submitted:
             if not all([name, email, password, confirm]):
@@ -260,7 +260,7 @@ def render_auth_page():
         with st.form("reset_form"):
             st.markdown("### Reset your password 🔒")
             email = st.text_input("Email", placeholder="you@example.com", key="reset_email")
-            submitted = st.form_submit_button("Send Reset Email 📬", use_container_width=True)
+            submitted = st.form_submit_button("Send Reset Email 📬")
 
         if submitted:
             if not email:

@@ -73,33 +73,7 @@ MOTIVATION_QUOTES = [
     "When motivation fades, routine carries you forward.",
 ]
 quote_of_day = MOTIVATION_QUOTES[date_obj.toordinal() % len(MOTIVATION_QUOTES)]
-
-# ---------------------------------------------------------------------------
-# Top navigation bar
-# ---------------------------------------------------------------------------
-
-with st.sidebar:
-    st.markdown(
-        f"""
-        <div class='streak-card' style='padding:14px 12px;'>
-            <div style='font-size:2.2rem;'>🔥</div>
-            <div style='font-size:1.25rem; font-weight:900; color:{COLORS["primary"]};'>Streakify</div>
-            <div style='font-size:0.84rem; color:{COLORS["text_muted"]}; margin-top:4px;'>
-                Hi, {dname}! 👋
-            </div>
-            <div class='duo-chip-row'>
-                <span class='duo-chip'>⚡ Consistency</span>
-                <span class='duo-chip'>❄️ Freezes</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown("<hr style='border-color:#E8E8F0;'>", unsafe_allow_html=True)
-
-    if st.button("🚪 Logout", use_container_width=True):
-        auth.logout()
-        st.rerun()
+EMOJI_OPTIONS = ["None", "💪", "🏃", "🧘", "🥗", "📚", "💼", "🧠", "💰", "🎯", "🛠️", "🎨", "📝", "🎵", "🧹", "🚴"]
 
 # ---------------------------------------------------------------------------
 # Main tabs
@@ -148,9 +122,10 @@ with tab_dash:
             cats  = db.get_categories(uid, sid)
             if not cats:
                 continue
+            sphere_title = f"{sphere.get('emoji','')} {sphere.get('name','')}".strip()
 
             st.markdown(
-                f"<div class='section-header'>{sphere.get('emoji','🌀')} {sphere.get('name','')}</div>",
+                f"<div class='section-header'>{sphere_title}</div>",
                 unsafe_allow_html=True,
             )
 
@@ -159,6 +134,7 @@ with tab_dash:
                 tasks = db.get_tasks(uid, sid, cid)
                 frequency = (cat.get("frequency") or "daily").lower()
                 cadence_label = "week" if frequency == "weekly" else "day"
+                cat_title = f"{cat.get('emoji','')} {cat.get('name','')}".strip()
 
                 # Reconcile streak (handles missed days automatically)
                 cat = sl.reconcile_streak(uid, sid, cat)
@@ -168,13 +144,9 @@ with tab_dash:
                 is_done_today     = len(completed_ids) > 0
 
                 card_color = COLORS["success"] if is_done_today else COLORS["border"]
-                status_icon = "✅" if is_done_today else "⬜"
-
                 with st.expander(
-                    f"{cat.get('emoji','📌')} **{cat.get('name','')}** — "
-                    f"{sl.streak_emoji(cat.get('streak',0))} **{cat.get('streak',0)} {cadence_label} streak** "
-                    f"| {sl.freeze_display(cat.get('freeze_count',0))} "
-                    f"| {status_icon}",
+                    f"{cat_title} — "
+                    f"{sl.streak_emoji(cat.get('streak',0))} **{cat.get('streak',0)} {cadence_label} streak**",
                     expanded=not is_done_today,
                 ):
                     if not tasks:
@@ -243,16 +215,21 @@ with tab_dash:
         st.markdown("<div class='section-header'>Heatmaps</div>", unsafe_allow_html=True)
 
         for sphere in spheres:
-            sid  = sphere["id"]
+            sid = sphere["id"]
             cats = db.get_categories(uid, sid)
-            for cat in cats:
-                history = db.get_completion_history(uid, sid, cat["id"], days=182)
-                ui.render_heatmap(
-                    history,
-                    title=f"{sphere.get('emoji','')} {sphere.get('name','')} › "
-                          f"{cat.get('emoji','')} {cat.get('name','')}",
-                    chart_key=f"heatmap_self_{sid}_{cat['id']}",
-                )
+            sphere_title = f"{sphere.get('emoji','')} {sphere.get('name','')}".strip()
+            with st.expander(f"📂 {sphere_title}", expanded=False):
+                if not cats:
+                    st.caption("No categories in this sphere yet.")
+                    continue
+                for cat in cats:
+                    history = db.get_completion_history(uid, sid, cat["id"], days=182)
+                    ui.render_heatmap(
+                        history,
+                        title=f"{sphere.get('emoji','')} {sphere.get('name','')} › "
+                              f"{cat.get('emoji','')} {cat.get('name','')}",
+                        chart_key=f"heatmap_self_{sid}_{cat['id']}",
+                    )
 
 
 # ============================================================
@@ -270,14 +247,15 @@ with tab_habits:
             with col1:
                 new_sphere_name = st.text_input("Sphere Name", placeholder="e.g. Health, Career, Prep")
             with col2:
-                new_sphere_emoji = st.text_input("Emoji", placeholder="🌿", max_chars=4)
-            submitted = st.form_submit_button("Create Sphere 🌀", use_container_width=True)
+                new_sphere_emoji_choice = st.selectbox("Emoji", options=EMOJI_OPTIONS)
+            submitted = st.form_submit_button("Create Sphere 🌀")
 
         if submitted:
             if not new_sphere_name.strip():
                 st.error("Please enter a name.")
             else:
-                db.create_sphere(uid, new_sphere_name.strip(), new_sphere_emoji.strip() or "🌀")
+                new_sphere_emoji = "" if new_sphere_emoji_choice == "None" else new_sphere_emoji_choice
+                db.create_sphere(uid, new_sphere_name.strip(), new_sphere_emoji)
                 st.success(f"Sphere '{new_sphere_name}' created! 🎉")
                 st.rerun()
 
@@ -290,9 +268,10 @@ with tab_habits:
         for sphere in spheres:
             sid     = sphere["id"]
             sname   = sphere.get("name", "")
-            semoji  = sphere.get("emoji", "🌀")
+            semoji  = sphere.get("emoji", "")
+            sphere_label = f"{semoji} {sname}".strip()
 
-            with st.expander(f"{semoji} **{sname}**", expanded=True):
+            with st.expander(f"**{sphere_label}**", expanded=True):
                 # Sphere actions
                 scol1, scol2 = st.columns([6, 1])
                 with scol2:
@@ -308,7 +287,7 @@ with tab_habits:
                     with cc1:
                         cat_name = st.text_input("Category Name", placeholder="e.g. Diet, Coding", key=f"cn_{sid}")
                     with cc2:
-                        cat_emoji = st.text_input("Emoji", placeholder="🥗", max_chars=4, key=f"ce_{sid}")
+                        cat_emoji_choice = st.selectbox("Emoji", options=EMOJI_OPTIONS, key=f"ce_{sid}")
                     with cc3:
                         cat_frequency = st.selectbox(
                             "Cadence",
@@ -323,13 +302,23 @@ with tab_habits:
                         if not cat_name.strip():
                             st.error("Category name required.")
                         else:
-                            db.create_category(
-                                uid,
-                                sid,
-                                cat_name.strip(),
-                                cat_emoji.strip() or "📌",
-                                frequency=cat_frequency.lower(),
-                            )
+                            try:
+                                cat_emoji = "" if cat_emoji_choice == "None" else cat_emoji_choice
+                                db.create_category(
+                                    uid,
+                                    sid,
+                                    cat_name.strip(),
+                                    cat_emoji,
+                                    frequency=cat_frequency.lower(),
+                                )
+                            except TypeError:
+                                # Backward compatibility if older database.py is loaded.
+                                db.create_category(
+                                    uid,
+                                    sid,
+                                    cat_name.strip(),
+                                    cat_emoji,
+                                )
                             st.success(f"Category '{cat_name}' added!")
                             st.rerun()
 
@@ -338,15 +327,16 @@ with tab_habits:
                 for cat in cats:
                     cid    = cat["id"]
                     cname  = cat.get("name", "")
-                    cemoji = cat.get("emoji", "📌")
+                    cemoji = cat.get("emoji", "")
+                    cat_label = f"{cemoji} {cname}".strip()
 
                     st.markdown(
                         f"<div style='margin-top:12px; font-weight:700; font-size:1.05rem;'>"
-                        f"{cemoji} {cname}"
+                        f"{cat_label}"
                         f"<span style='font-size:0.8rem; font-weight:400; color:{COLORS['text_muted']}; margin-left:8px;'>"
                         f"🔥 {cat.get('streak',0)} streak"
                         f" ({'weekly' if (cat.get('frequency') or 'daily').lower() == 'weekly' else 'daily'})"
-                        f" | ❄️ {cat.get('freeze_count',0)} freezes"
+                        f" | {'No freezes' if (cat.get('frequency') or 'daily').lower() == 'weekly' else f'❄️ {cat.get('freeze_count',0)} freezes'}"
                         f"</span></div>",
                         unsafe_allow_html=True,
                     )
@@ -408,7 +398,7 @@ with tab_acct:
                 placeholder="friend@example.com",
                 help="They must have a Streakify account.",
             )
-            link_submit = st.form_submit_button("Link Partner 🤝", use_container_width=True)
+            link_submit = st.form_submit_button("Link Partner 🤝")
 
         if link_submit:
             if not partner_email.strip():
@@ -473,16 +463,21 @@ with tab_acct:
             st.markdown("<div class='section-header'>Partner Heatmaps</div>", unsafe_allow_html=True)
 
             for sphere in partner_spheres:
-                sid  = sphere["id"]
+                sid = sphere["id"]
                 cats = db.get_categories(partner_id, sid)
-                for cat in cats:
-                    history = db.get_completion_history(partner_id, sid, cat["id"], days=182)
-                    ui.render_heatmap(
-                        history,
-                        title=f"{sphere.get('emoji','')} {sphere.get('name','')} › "
-                              f"{cat.get('emoji','')} {cat.get('name','')}",
-                        chart_key=f"heatmap_partner_{sid}_{cat['id']}",
-                    )
+                sphere_title = f"{sphere.get('emoji','')} {sphere.get('name','')}".strip()
+                with st.expander(f"📂 {sphere_title}", expanded=False):
+                    if not cats:
+                        st.caption("No categories in this sphere yet.")
+                        continue
+                    for cat in cats:
+                        history = db.get_completion_history(partner_id, sid, cat["id"], days=182)
+                        ui.render_heatmap(
+                            history,
+                            title=f"{sphere.get('emoji','')} {sphere.get('name','')} › "
+                                  f"{cat.get('emoji','')} {cat.get('name','')}",
+                            chart_key=f"heatmap_partner_{sid}_{cat['id']}",
+                        )
 
 
 # ============================================================
@@ -501,7 +496,7 @@ with tab_settings:
     st.markdown("### 👤 Profile")
     with st.form("profile_form"):
         new_name = st.text_input("Display Name", value=profile.get("display_name", ""))
-        save_profile = st.form_submit_button("Save Profile", use_container_width=True)
+        save_profile = st.form_submit_button("Save Profile")
 
     if save_profile:
         if new_name.strip():
@@ -530,7 +525,7 @@ with tab_settings:
             value=profile.get("telegram_chat_id", ""),
             placeholder="e.g. 123456789",
         )
-        save_tg = st.form_submit_button("Save Telegram ID 💾", use_container_width=True)
+        save_tg = st.form_submit_button("Save Telegram ID 💾")
 
     if save_tg:
         db.update_user_profile(uid, {"telegram_chat_id": tg_id.strip()})
@@ -556,3 +551,7 @@ with tab_settings:
         unsafe_allow_html=True,
     )
     st.caption("Share your email with someone to let them add you as an accountability partner.")
+    st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
+    if st.button("🚪 Logout"):
+        auth.logout()
+        st.rerun()

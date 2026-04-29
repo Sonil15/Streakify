@@ -24,17 +24,20 @@ import streak_logic as sl
 def render_streak_card(category: dict, show_progress: bool = True):
     """Render a cute streak card for a single category."""
     name   = category.get("name", "")
-    emoji  = category.get("emoji", "📌")
+    emoji  = category.get("emoji", "")
     streak = category.get("streak", 0)
     freeze = category.get("freeze_count", 0)
     consec = category.get("consecutive_days", 0)
     frequency = (category.get("frequency") or "daily").lower()
     cadence_label = "week" if frequency == "weekly" else "day"
+    freeze_text = "No freezes (weekly mode)" if frequency == "weekly" else sl.freeze_display(freeze)
 
     color          = sl.streak_color(streak)
     streak_icon    = sl.streak_emoji(streak)
-    freeze_text    = sl.freeze_display(freeze)
     days_to_freeze = sl.days_until_next_freeze(consec)
+    # Keep HTML block non-empty; blank lines can make markdown leak closing tags.
+    freeze_hint    = "&nbsp;" if frequency == "weekly" else f"{days_to_freeze}d until next ❄️"
+    title_text     = f"{emoji} {name}".strip()
 
     st.markdown(
         f"""
@@ -42,7 +45,7 @@ def render_streak_card(category: dict, show_progress: bool = True):
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                 <div>
                     <div style="font-size:1.3rem; font-weight:800; color:{COLORS['text_main']};">
-                        {emoji} {name}
+                        {title_text}
                     </div>
                     <div style="margin-top:6px;">
                         <span class="streak-number" style="color:{color};">
@@ -54,7 +57,7 @@ def render_streak_card(category: dict, show_progress: bool = True):
                 <div style="text-align:right;">
                     <div class="freeze-badge">{freeze_text}</div>
                     <div style="font-size:0.78rem; color:{COLORS['text_muted']}; margin-top:6px;">
-                        {days_to_freeze}d until next ❄️
+                        {freeze_hint}
                     </div>
                 </div>
             </div>
@@ -67,7 +70,8 @@ def render_streak_card(category: dict, show_progress: bool = True):
         pct = (consec % 7) / 7
         if pct == 0 and consec > 0:
             pct = 1.0
-        st.progress(pct, text=f"🎯 {consec % 7 or 7}/7 days towards next ❄️")
+        if frequency == "daily":
+            st.progress(pct, text=f"🎯 {consec % 7 or 7}/7 days towards next ❄️")
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +204,7 @@ def render_heatmap(
 
     st.plotly_chart(
         fig,
-        use_container_width=True,
+        width="stretch",
         config={"displayModeBar": False},
         key=chart_key,
     )
@@ -258,9 +262,10 @@ def render_task_checklist(
 def render_sphere_overview(sphere: dict, categories: list[dict]):
     """Render a collapsible sphere section with category streak rows."""
     sname = sphere.get("name", "")
-    semoji = sphere.get("emoji", "🌀")
+    semoji = sphere.get("emoji", "")
+    sphere_label = f"{semoji} {sname}".strip()
 
-    with st.expander(f"{semoji} **{sname}**", expanded=True):
+    with st.expander(f"**{sphere_label}**", expanded=True):
         if not categories:
             st.caption("No categories yet.")
             return
@@ -270,10 +275,8 @@ def render_sphere_overview(sphere: dict, categories: list[dict]):
             streak = cat.get("streak", 0)
             freeze = cat.get("freeze_count", 0)
             with col1:
-                st.markdown(
-                    f"**{cat.get('emoji','📌')} {cat.get('name','')}**",
-                    unsafe_allow_html=True,
-                )
+                cat_label = f"{cat.get('emoji','')} {cat.get('name','')}".strip()
+                st.markdown(f"**{cat_label}**", unsafe_allow_html=True)
             with col2:
                 st.markdown(
                     f"<span style='color:{sl.streak_color(streak)};font-weight:800;'>"
@@ -317,11 +320,12 @@ def render_accountability_view(
         return
 
     for sphere in spheres_with_categories:
-        semoji = sphere.get("emoji", "🌀")
+        semoji = sphere.get("emoji", "")
         sname  = sphere.get("name", "")
         cats   = sphere.get("categories", [])
+        sphere_label = f"{semoji} {sname}".strip()
 
-        with st.expander(f"{semoji} **{sname}**", expanded=True):
+        with st.expander(f"**{sphere_label}**", expanded=True):
             for cat in cats:
                 ckey      = f"{sphere['id']}:{cat['id']}"
                 done_today = completion_today_map.get(ckey, False)
@@ -330,7 +334,8 @@ def render_accountability_view(
 
                 col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
                 with col1:
-                    st.markdown(f"**{cat.get('emoji','📌')} {cat.get('name','')}**")
+                    cat_label = f"{cat.get('emoji','')} {cat.get('name','')}".strip()
+                    st.markdown(f"**{cat_label}**")
                 with col2:
                     st.markdown(
                         f"<span style='color:{sl.streak_color(streak)};font-weight:800;'>"

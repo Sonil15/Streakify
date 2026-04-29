@@ -204,7 +204,15 @@ def run_reminders():
                     continue
 
                 # At risk!
-                if freeze_count == 0:
+                if frequency == "weekly":
+                    msg = (
+                        f"⏰ <b>Weekly Streak Reminder</b>\n\n"
+                        f"Hey {name}! Nothing logged yet in <b>{sphere_name} › {cat_name}</b> this week.\n\n"
+                        f"Complete at least one task this weekend to protect your "
+                        f"<b>{streak}-week streak</b>. 💪"
+                    )
+                    print(f"    ⏰ WEEKLY NUDGE — {sphere_name} › {cat_name} (streak={streak})")
+                elif freeze_count == 0:
                     # DANGER: streak will reset at midnight
                     msg = (
                         f"🚨 <b>Streakify Alert!</b>\n\n"

@@ -58,6 +58,16 @@ def reconcile_streak(uid: str, sphere_id: str, category: dict) -> dict:
         if periods_since <= 1:
             return category
         missed = periods_since - 1
+        # Weekly categories do not use freezes.
+        if missed > 0:
+            updates = {
+                "streak": 0,
+                "consecutive_days": 0,
+                "freeze_count": 0,
+            }
+            db.update_category(uid, sphere_id, category_id, updates)
+            category.update(updates)
+            return category
     else:
         # How many full days have passed since last completion (excluding today)?
         days_since = (today - last_date).days   # e.g. 0 = same day, 1 = yesterday
@@ -136,9 +146,9 @@ def record_completion_for_today(uid: str, sphere_id: str, category: dict) -> dic
             streak = streak + 1 if streak > 0 else 1
             consec = 1   # restart the freeze-earning counter after any gap
 
-    # Award freeze every FREEZE_EARN_INTERVAL consecutive days
+    # Award freeze every FREEZE_EARN_INTERVAL consecutive days (daily only)
     freeze_awarded = False
-    if consec > 0 and consec % FREEZE_EARN_INTERVAL == 0:
+    if frequency == "daily" and consec > 0 and consec % FREEZE_EARN_INTERVAL == 0:
         freezes += 1
         freeze_awarded = True
 
@@ -194,15 +204,12 @@ def check_if_still_active_today(
 
         streak = max(0, category.get("streak", 1) - 1)
         consec = max(0, category.get("consecutive_days", 1) - 1)
-        freezes = category.get("freeze_count", 0)
-        if (consec + 1) % FREEZE_EARN_INTERVAL == 0:
-            freezes = max(0, freezes - 1)
 
         previous_period_date = week_start - timedelta(days=1)
         new_last = previous_period_date.strftime("%Y-%m-%d") if streak > 0 else None
         updates = {
             "streak":               streak,
-            "freeze_count":         freezes,
+            "freeze_count":         0,
             "consecutive_days":     consec,
             "last_completed_date":  new_last,
         }
@@ -271,7 +278,7 @@ def streak_color(streak: int) -> str:
 def freeze_display(count: int) -> str:
     """Return e.g. '❄️ x 3' for the given freeze count."""
     if count == 0:
-        return "No freezes 😬"
+        return "No freezes"
     return "❄️ x " + str(count)
 
 
