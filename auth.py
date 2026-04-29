@@ -124,10 +124,7 @@ def try_restore_session() -> bool:
     if is_logged_in():
         return True
 
-    cookie_mgr = _get_cookie_manager()
-    if cookie_mgr is None:
-        return False
-    refresh_token = cookie_mgr.get(_refresh_cookie_name())
+    refresh_token = _get_refresh_cookie_value()
     if not refresh_token:
         return False
 
@@ -290,6 +287,29 @@ def _clear_persistent_login():
     if cookie_mgr is None:
         return
     cookie_mgr.delete(_refresh_cookie_name())
+
+
+def _get_refresh_cookie_value() -> str:
+    """
+    Prefer request cookies (reliable on first run in deployed envs),
+    then fallback to CookieManager component state.
+    """
+    cookie_name = _refresh_cookie_name()
+
+    try:
+        ctx_cookies = st.context.cookies
+        if ctx_cookies:
+            token = ctx_cookies.get(cookie_name, "")
+            if token:
+                return token
+    except Exception:
+        # st.context may be unavailable in some Streamlit versions.
+        pass
+
+    cookie_mgr = _get_cookie_manager()
+    if cookie_mgr is None:
+        return ""
+    return cookie_mgr.get(cookie_name) or ""
 
 
 def _parse_firebase_error(e: Exception) -> str:
