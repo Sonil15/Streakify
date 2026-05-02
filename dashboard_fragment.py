@@ -151,7 +151,7 @@ def _persist_job(
             else:
                 cat = sl.check_if_still_active_today(uid, sid, cid, remaining, cat)
             freeze = bool(cat.get("freeze_awarded_today"))
-            _result_queue.put(("ok", sid, cid, dict(cat), freeze, bool(desired)))
+            _result_queue.put(("ok", sid, cid, dict(cat), freeze))
         except Exception as e:
             _result_queue.put(("err", sid, cid, tid, rollback_checkbox, str(e)))
 
@@ -177,9 +177,8 @@ def make_toggle_cb(
         ]
 
         _apply_optimistic_cat(cat_state_key, desired, remaining, cat_before)
-
-        # Instant feedback — does not wait for Firestore (persist runs in background).
         if desired:
+            # Instant feedback on check; persistence continues in background.
             st.balloons()
 
         threading.Thread(
@@ -203,7 +202,7 @@ def make_toggle_cb(
 def _process_drain(uid: str, today: str, events: list[tuple]) -> None:
     for ev in events:
         if ev[0] == "ok":
-            _, sid, cid, cat_row, freeze_aw, _did_check = ev
+            _, sid, cid, cat_row, freeze_aw = ev
             st.session_state[dash_cat_key(sid, cid)] = cat_row
             _patch_bundle_item(uid, today, sid, cid, cat_row)
             if freeze_aw:
