@@ -21,6 +21,7 @@ import database as db
 import streak_logic as sl
 import ui_components as ui
 import ai_planner
+from dashboard_bundle import ensure_structure_bundle
 from dashboard_fragment import (
     invalidate_dashboard_bundle,
     render_dashboard_tasks_and_scoreboard,
@@ -171,11 +172,12 @@ with tab_habits:
 
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
 
-    spheres = db.get_spheres(uid)
-    if not spheres:
+    # Same parallel session bundle as Dashboard — avoids a second full Firestore scan here.
+    habits_bundle = ensure_structure_bundle(uid, today)
+    if not habits_bundle["spheres"]:
         st.info("No spheres yet! Create one above ⬆️")
     else:
-        for sphere in spheres:
+        for sphere in habits_bundle["spheres"]:
             sid     = sphere["id"]
             sname   = sphere.get("name", "")
             semoji  = sphere.get("emoji", "")
@@ -234,12 +236,13 @@ with tab_habits:
                             invalidate_dashboard_bundle()
                             st.rerun()
 
-                # ── Existing categories ──────────────────────────────
-                cats = db.get_categories(uid, sid)
-                for cat in cats:
-                    cid    = cat["id"]
-                    cname  = cat.get("name", "")
+                # ── Existing categories (from cached bundle) ─────────
+                for item in habits_bundle.get("by_sphere", {}).get(sid, []):
+                    cat = item["cat"]
+                    cid = cat["id"]
+                    cname = cat.get("name", "")
                     cemoji = cat.get("emoji", "")
+                    tasks = item["tasks"]
                     cat_label = f"{cemoji} {cname}".strip()
 
                     st.markdown(
@@ -252,8 +255,6 @@ with tab_habits:
                         f"</span></div>",
                         unsafe_allow_html=True,
                     )
-
-                    tasks = db.get_tasks(uid, sid, cid)
 
                     # Add task form
                     with st.form(f"add_task_{sid}_{cid}"):
