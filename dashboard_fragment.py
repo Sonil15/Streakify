@@ -19,14 +19,17 @@ import streamlit as st
 import database as db
 import streak_logic as sl
 import ui_components as ui
-from dashboard_bundle import (
-    STRUCTURE_BUNDLE_KEY,
-    ensure_structure_bundle,
-    invalidate_dashboard_bundle,
-)
+from dashboard_bundle import build_dashboard_bundle
 
 _result_queue: queue.Queue = queue.Queue()
 _cat_locks: dict[str, threading.Lock] = {}
+
+DASH_BUNDLE_KEY = "_dash_data_bundle"
+
+
+def invalidate_dashboard_bundle() -> None:
+    """Call after Habits mutations so the next dashboard load refetches tasks/categories."""
+    st.session_state.pop(DASH_BUNDLE_KEY, None)
 
 
 def dash_cb_key(uid: str, today: str, sid: str, cid: str, tid: str) -> str:
@@ -67,6 +70,15 @@ def _sync_day_anchor(today: str) -> None:
     invalidate_dashboard_bundle()
 
 
+def _ensure_bundle(uid: str, today: str) -> dict[str, Any]:
+    b = st.session_state.get(DASH_BUNDLE_KEY)
+    if b and b.get("uid") == uid and b.get("today") == today:
+        return b
+    b = build_dashboard_bundle(uid, today)
+    st.session_state[DASH_BUNDLE_KEY] = b
+    return b
+
+
 def _get_item(bundle: dict, sid: str, cid: str) -> dict[str, Any] | None:
     for it in bundle.get("items", []):
         if it["sphere"]["id"] == sid and it["cat"]["id"] == cid:
@@ -77,7 +89,7 @@ def _get_item(bundle: dict, sid: str, cid: str) -> dict[str, Any] | None:
 def _patch_bundle_item(
     uid: str, today: str, sid: str, cid: str, cat_row: dict
 ) -> None:
-    b = st.session_state.get(STRUCTURE_BUNDLE_KEY)
+    b = st.session_state.get(DASH_BUNDLE_KEY)
     if not b:
         return
     for it in b.get("items", []):
@@ -214,7 +226,7 @@ def _category_row_fragment(uid: str, today: str, item: dict[str, Any]) -> None:
     if drained:
         _process_drain(uid, today, drained)
 
-    bundle = ensure_structure_bundle(uid, today)
+    bundle = _ensure_bundle(uid, today)
     sid = item["sphere"]["id"]
     cid = item["cat"]["id"]
     fresh = _get_item(bundle, sid, cid)
@@ -290,7 +302,7 @@ def _scoreboard_fragment(uid: str, today: str) -> None:
     if drained:
         _process_drain(uid, today, drained)
 
-    bundle = st.session_state.get(STRUCTURE_BUNDLE_KEY)
+    bundle = st.session_state.get(DASH_BUNDLE_KEY)
     if not bundle or bundle.get("uid") != uid or bundle.get("today") != today:
         return
 
@@ -328,7 +340,7 @@ def render_dashboard_tasks_and_scoreboard(uid: str, _dname: str, today: str) -> 
     Shell: builds/refreshes bundle once per full run; per-category fragments handle toggles.
     """
     _sync_day_anchor(today)
-    bundle = ensure_structure_bundle(uid, today)
+    bundle = _ensure_bundle(uid, today)
 
     st.markdown("### Today's Tasks", unsafe_allow_html=True)
     st.caption("Check off at least one task per category to keep your streak alive!")

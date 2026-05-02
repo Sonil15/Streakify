@@ -1,7 +1,5 @@
 """
-Build dashboard / Habits structure in parallel to avoid sequential Firestore latency.
-
-Single session-scoped cache (_dash_data_bundle) shared by Dashboard + Habits tabs.
+Build dashboard data in parallel to avoid sequential Firestore latency (main UX bottleneck).
 """
 
 from __future__ import annotations
@@ -9,32 +7,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-import streamlit as st
-
 import database as db
 import streak_logic as sl
-
-# Same key everywhere so Dashboard checkboxes + Habits CRUD share one cached fetch.
-STRUCTURE_BUNDLE_KEY = "_dash_data_bundle"
-
-
-def ensure_structure_bundle(uid: str, today: str) -> dict[str, Any]:
-    """Return cached spheres/categories/tasks/completions or rebuild in parallel."""
-    b = st.session_state.get(STRUCTURE_BUNDLE_KEY)
-    if b and b.get("uid") == uid and b.get("today") == today:
-        return b
-    b = build_dashboard_bundle(uid, today)
-    st.session_state[STRUCTURE_BUNDLE_KEY] = b
-    return b
-
-
-def invalidate_structure_bundle() -> None:
-    """Drop cache after any mutation that changes spheres, categories, or tasks."""
-    st.session_state.pop(STRUCTURE_BUNDLE_KEY, None)
-
-
-# Alias kept for existing imports / readability in dashboard code
-invalidate_dashboard_bundle = invalidate_structure_bundle
 
 
 def build_dashboard_bundle(uid: str, today: str) -> dict[str, Any]:

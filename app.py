@@ -21,11 +21,11 @@ import database as db
 import streak_logic as sl
 import ui_components as ui
 import ai_planner
-from dashboard_bundle import ensure_structure_bundle
 from dashboard_fragment import (
     invalidate_dashboard_bundle,
     render_dashboard_tasks_and_scoreboard,
 )
+from habits_fragment import invalidate_habits_bundle, render_habits_tab
 from styles import inject_custom_css, COLORS
 
 # ---------------------------------------------------------------------------
@@ -146,171 +146,7 @@ with tab_dash:
 # TAB 2 – HABITS MANAGEMENT
 # ============================================================
 with tab_habits:
-    st.markdown("<div class='page-title'>📋 Manage Habits</div>", unsafe_allow_html=True)
-    st.caption("Create Spheres → Categories → Tasks. Streaks are tracked at the Category level.")
-    st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
-
-    # ── Create Sphere ──────────────────────────────────────────────
-    with st.expander("➕ Add New Sphere", expanded=False):
-        with st.form("create_sphere_form"):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                new_sphere_name = st.text_input("Sphere Name", placeholder="e.g. Health, Career, Prep")
-            with col2:
-                new_sphere_emoji_choice = st.selectbox("Emoji", options=EMOJI_OPTIONS)
-            submitted = st.form_submit_button("Create Sphere 🌀")
-
-        if submitted:
-            if not new_sphere_name.strip():
-                st.error("Please enter a name.")
-            else:
-                new_sphere_emoji = "" if new_sphere_emoji_choice == "None" else new_sphere_emoji_choice
-                db.create_sphere(uid, new_sphere_name.strip(), new_sphere_emoji)
-                st.success(f"Sphere '{new_sphere_name}' created! 🎉")
-                invalidate_dashboard_bundle()
-                st.rerun()
-
-    st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
-
-    # Same parallel session bundle as Dashboard — avoids a second full Firestore scan here.
-    habits_bundle = ensure_structure_bundle(uid, today)
-    if not habits_bundle["spheres"]:
-        st.info("No spheres yet! Create one above ⬆️")
-    else:
-        for sphere in habits_bundle["spheres"]:
-            sid     = sphere["id"]
-            sname   = sphere.get("name", "")
-            semoji  = sphere.get("emoji", "")
-            sphere_label = f"{semoji} {sname}".strip()
-
-            with st.expander(f"**{sphere_label}**", expanded=True):
-                # Sphere actions
-                scol1, scol2 = st.columns([6, 1])
-                with scol2:
-                    if st.button("🗑️", key=f"del_sphere_{sid}", help="Delete this sphere"):
-                        db.delete_sphere(uid, sid)
-                        st.success(f"Sphere '{sname}' deleted.")
-                        invalidate_dashboard_bundle()
-                        st.rerun()
-
-                # ── Add category ────────────────────────────────────
-                with st.form(f"add_cat_{sid}"):
-                    st.markdown("**Add Category:**")
-                    cc1, cc2, cc3, cc4 = st.columns([3, 1, 2, 1])
-                    with cc1:
-                        cat_name = st.text_input("Category Name", placeholder="e.g. Diet, Coding", key=f"cn_{sid}")
-                    with cc2:
-                        cat_emoji_choice = st.selectbox("Emoji", options=EMOJI_OPTIONS, key=f"ce_{sid}")
-                    with cc3:
-                        cat_frequency = st.selectbox(
-                            "Cadence",
-                            options=["Daily", "Weekly"],
-                            key=f"cf_{sid}",
-                        )
-                    with cc4:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        cat_submit = st.form_submit_button("Add ➕")
-
-                    if cat_submit:
-                        if not cat_name.strip():
-                            st.error("Category name required.")
-                        else:
-                            try:
-                                cat_emoji = "" if cat_emoji_choice == "None" else cat_emoji_choice
-                                db.create_category(
-                                    uid,
-                                    sid,
-                                    cat_name.strip(),
-                                    cat_emoji,
-                                    frequency=cat_frequency.lower(),
-                                )
-                            except TypeError:
-                                # Backward compatibility if older database.py is loaded.
-                                db.create_category(
-                                    uid,
-                                    sid,
-                                    cat_name.strip(),
-                                    cat_emoji,
-                                )
-                            st.success(f"Category '{cat_name}' added!")
-                            invalidate_dashboard_bundle()
-                            st.rerun()
-
-                # ── Existing categories (from cached bundle) ─────────
-                for item in habits_bundle.get("by_sphere", {}).get(sid, []):
-                    cat = item["cat"]
-                    cid = cat["id"]
-                    cname = cat.get("name", "")
-                    cemoji = cat.get("emoji", "")
-                    tasks = item["tasks"]
-                    cat_label = f"{cemoji} {cname}".strip()
-
-                    st.markdown(
-                        f"<div style='margin-top:12px; font-weight:700; font-size:1.05rem;'>"
-                        f"{cat_label}"
-                        f"<span style='font-size:0.8rem; font-weight:400; color:{COLORS['text_muted']}; margin-left:8px;'>"
-                        f"🔥 {cat.get('streak',0)} streak"
-                        f" ({'weekly' if (cat.get('frequency') or 'daily').lower() == 'weekly' else 'daily'})"
-                        f" | {'No freezes' if (cat.get('frequency') or 'daily').lower() == 'weekly' else f'❄️ {cat.get('freeze_count',0)} freezes'}"
-                        f"</span></div>",
-                        unsafe_allow_html=True,
-                    )
-
-                    # Add task form
-                    with st.form(f"add_task_{sid}_{cid}"):
-                        task_name = st.text_input(
-                            "New Task",
-                            placeholder="e.g. Eat 100g protein",
-                            key=f"tn_{sid}_{cid}",
-                        )
-                        one_off = st.checkbox(
-                            "One-off task (expires after tonight midnight IST; stays in history once archived)",
-                            value=False,
-                            key=f"oneoff_{sid}_{cid}",
-                        )
-                        task_submit = st.form_submit_button("Add Task")
-
-                        if task_submit:
-                            if task_name.strip():
-                                db.create_task(
-                                    uid,
-                                    sid,
-                                    cid,
-                                    task_name.strip(),
-                                    repeating=not one_off,
-                                )
-                                st.success("Task added!")
-                                invalidate_dashboard_bundle()
-                                st.rerun()
-
-                    # List existing tasks
-                    for task in tasks:
-                        tcol1, tcol2 = st.columns([8, 1])
-                        with tcol1:
-                            suffix = ""
-                            if task.get("repeating", True) is False:
-                                suffix = (
-                                    "<span style='font-size:0.78rem;color:#7A8B95;margin-left:6px'>"
-                                    "(one-off · until midnight IST)</span>"
-                                )
-                            st.markdown(
-                                f"&nbsp;&nbsp;&nbsp;• {task.get('name','')}{suffix}",
-                                unsafe_allow_html=True,
-                            )
-                        with tcol2:
-                            if st.button("✕", key=f"del_task_{sid}_{cid}_{task['id']}"):
-                                db.delete_task(uid, sid, cid, task["id"])
-                                invalidate_dashboard_bundle()
-                                st.rerun()
-
-                    # Delete category button
-                    if st.button(f"🗑️ Remove '{cname}'", key=f"del_cat_{sid}_{cid}"):
-                        db.delete_category(uid, sid, cid)
-                        st.success(f"Category '{cname}' deleted.")
-                        invalidate_dashboard_bundle()
-                        st.rerun()
-
-                    st.markdown("<hr style='border-color:#F0F0F0; margin:10px 0;'>", unsafe_allow_html=True)
+    render_habits_tab(uid, EMOJI_OPTIONS, COLORS["text_muted"])
 
 
 # ============================================================
@@ -428,6 +264,7 @@ with tab_plan:
                     st.session_state.pop("ai_plan_preview", None)
                     st.session_state.pop("ai_plan_instruction", None)
                     invalidate_dashboard_bundle()
+                    invalidate_habits_bundle()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Apply failed: {e}")
