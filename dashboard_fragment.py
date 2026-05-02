@@ -151,7 +151,7 @@ def _persist_job(
             else:
                 cat = sl.check_if_still_active_today(uid, sid, cid, remaining, cat)
             freeze = bool(cat.get("freeze_awarded_today"))
-            _result_queue.put(("ok", sid, cid, dict(cat), freeze))
+            _result_queue.put(("ok", sid, cid, dict(cat), freeze, bool(desired)))
         except Exception as e:
             _result_queue.put(("err", sid, cid, tid, rollback_checkbox, str(e)))
 
@@ -177,9 +177,6 @@ def make_toggle_cb(
         ]
 
         _apply_optimistic_cat(cat_state_key, desired, remaining, cat_before)
-        if desired:
-            # Instant feedback on check; persistence continues in background.
-            st.balloons()
 
         threading.Thread(
             target=_persist_job,
@@ -200,11 +197,14 @@ def make_toggle_cb(
 
 
 def _process_drain(uid: str, today: str, events: list[tuple]) -> None:
+    celebrate = False
     for ev in events:
         if ev[0] == "ok":
-            _, sid, cid, cat_row, freeze_aw = ev
+            _, sid, cid, cat_row, freeze_aw, did_check = ev
             st.session_state[dash_cat_key(sid, cid)] = cat_row
             _patch_bundle_item(uid, today, sid, cid, cat_row)
+            if did_check:
+                celebrate = True
             if freeze_aw:
                 st.success(
                     f"🎉 You earned a new ❄️ Freeze for **{cat_row.get('name', 'this category')}**! "
@@ -215,6 +215,8 @@ def _process_drain(uid: str, today: str, events: list[tuple]) -> None:
             cb_key = dash_cb_key(uid, today, sid, cid, tid)
             st.session_state[cb_key] = rollback_checkbox
             st.toast(f"Could not save your change: {msg}", icon="⚠️")
+    if celebrate:
+        st.balloons()
 
 
 @st.fragment
