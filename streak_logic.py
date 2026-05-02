@@ -97,6 +97,91 @@ def reconcile_streak(uid: str, sphere_id: str, category: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# In-memory preview (optimistic UI; must stay consistent with DB helpers below)
+# ---------------------------------------------------------------------------
+
+def compute_record_completion_for_today(category: dict) -> dict:
+    """
+    Same outcome as record_completion_for_today but no Firestore writes.
+    Returns a new dict with freeze_awarded_today set for UI feedback.
+    """
+    cat = dict(category)
+    today_str = db.today_ist()
+    today = date.fromisoformat(today_str)
+
+    last_str = cat.get("last_completed_date")
+    streak = cat.get("streak", 0)
+    freezes = cat.get("freeze_count", 0)
+    consec = cat.get("consecutive_days", 0)
+    frequency = _frequency(cat)
+
+    if frequency == "weekly":
+        if last_str:
+            last_date = date.fromisoformat(last_str)
+            if _week_start(last_date) == _week_start(today):
+                cat["freeze_awarded_today"] = False
+                return cat
+
+        previous_week_start = _week_start(today) - timedelta(days=7)
+        if last_str and _week_start(date.fromisoformat(last_str)) == previous_week_start:
+            streak += 1
+            consec += 1
+        else:
+            streak = streak + 1 if streak > 0 else 1
+            consec = 1
+    else:
+        if last_str == today_str:
+            cat["freeze_awarded_today"] = False
+            return cat
+
+        if last_str == (today - timedelta(days=1)).strftime("%Y-%m-%d"):
+            streak += 1
+            consec += 1
+        else:
+            streak = streak + 1 if streak > 0 else 1
+            consec = 1
+
+    freeze_awarded = False
+    if frequency == "daily" and consec > 0 and consec % FREEZE_EARN_INTERVAL == 0:
+        freezes += 1
+        freeze_awarded = True
+
+    cat["streak"] = streak
+    cat["freeze_count"] = freezes
+    cat["consecutive_days"] = consec
+    cat["last_completed_date"] = today_str
+    cat["freeze_awarded_today"] = freeze_awarded
+    return cat
+
+
+def compute_daily_uncheck_rollback(category: dict) -> dict:
+    """
+    Preview rolling back today's streak extension when no daily tasks remain.
+    Weekly categories must use check_if_still_active_today (needs Firestore).
+    """
+    cat = dict(category)
+    today_str = db.today_ist()
+    if cat.get("last_completed_date") != today_str:
+        return cat
+
+    today = date.fromisoformat(today_str)
+    streak = max(0, cat.get("streak", 1) - 1)
+    consec = max(0, cat.get("consecutive_days", 1) - 1)
+    freezes = cat.get("freeze_count", 0)
+    if (consec + 1) % FREEZE_EARN_INTERVAL == 0:
+        freezes = max(0, freezes - 1)
+
+    yesterday_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    new_last = yesterday_str if streak > 0 else None
+
+    cat["streak"] = streak
+    cat["freeze_count"] = freezes
+    cat["consecutive_days"] = consec
+    cat["last_completed_date"] = new_last
+    return cat
+
+
+# ---------------------------------------------------------------------------
 # Public: call after a task is checked off for today
 # ---------------------------------------------------------------------------
 

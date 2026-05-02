@@ -21,6 +21,7 @@ import database as db
 import streak_logic as sl
 import ui_components as ui
 import ai_planner
+from dashboard_fragment import render_dashboard_tasks_and_scoreboard
 from styles import inject_custom_css, COLORS
 
 # ---------------------------------------------------------------------------
@@ -112,110 +113,8 @@ with tab_dash:
             "Head to the **📋 Habits** tab to get started."
         )
     else:
-        # ── Daily quick-log ──────────────────────────────────────────
-        st.markdown("### Today's Tasks", unsafe_allow_html=True)
-        st.caption("Check off at least one task per category to keep your streak alive!")
-
-        any_new_completion = False
-
-        for sphere in spheres:
-            sid   = sphere["id"]
-            cats  = db.get_categories(uid, sid)
-            if not cats:
-                continue
-            sphere_title = f"{sphere.get('emoji','')} {sphere.get('name','')}".strip()
-
-            st.markdown(
-                f"<div class='section-header'>{sphere_title}</div>",
-                unsafe_allow_html=True,
-            )
-
-            for cat in cats:
-                cid   = cat["id"]
-                tasks = db.get_tasks(uid, sid, cid)
-                frequency = (cat.get("frequency") or "daily").lower()
-                cadence_label = "week" if frequency == "weekly" else "day"
-                cat_title = f"{cat.get('emoji','')} {cat.get('name','')}".strip()
-
-                # Reconcile streak (handles missed days automatically)
-                cat = sl.reconcile_streak(uid, sid, cat)
-
-                completion_doc = db.get_completion(uid, sid, cid, today)
-                completed_ids = db.completion_ids_for_active_tasks(
-                    list(completion_doc.get("completed_tasks", [])),
-                    tasks,
-                )
-
-                # Checklist + streak updates MUST run before st.expander(...): Streamlit
-                # evaluates the expander label before the body runs, so record_completion_for_today
-                # must happen first or the header shows a stale streak until the next rerun.
-                newly_checked: list[str] = []
-                newly_unchecked: list[str] = []
-                if tasks:
-                    key_pfx = f"dash_{sid}_{cid}"
-                    newly_checked, newly_unchecked = ui.render_task_checklist(
-                        tasks, completed_ids, key_prefix=key_pfx
-                    )
-
-                    for tid in newly_checked:
-                        db.set_task_completion(uid, sid, cid, tid, today, True)
-                        completed_ids.append(tid)
-
-                    for tid in newly_unchecked:
-                        db.set_task_completion(uid, sid, cid, tid, today, False)
-                        completed_ids.remove(tid)
-
-                    if newly_checked:
-                        cat = sl.record_completion_for_today(uid, sid, cat)
-                        any_new_completion = True
-
-                    if newly_unchecked:
-                        cat = sl.check_if_still_active_today(
-                            uid, sid, cid, completed_ids, cat
-                        )
-
-                is_done_today = len(completed_ids) > 0
-
-                with st.expander(
-                    f"{cat_title} — "
-                    f"{sl.streak_emoji(cat.get('streak',0))} **{cat.get('streak',0)} {cadence_label} streak**",
-                    expanded=not is_done_today,
-                ):
-                    if not tasks:
-                        st.caption("No tasks yet — add some in the Habits tab!")
-                        continue
-
-                    pct = len(completed_ids) / len(tasks) if tasks else 0
-                    st.progress(pct, text=f"{len(completed_ids)}/{len(tasks)} tasks done today")
-
-                    if newly_checked and cat.get("freeze_awarded_today"):
-                        st.success(
-                            f"🎉 You earned a new ❄️ Freeze for **{cat['name']}**! "
-                            f"You now have {cat['freeze_count']} freezes."
-                        )
-
-        # Celebrate!
-        if any_new_completion:
-            st.balloons()
-
-        # ── Streak overview ──────────────────────────────────────────
-        st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
-        st.markdown("### 🏆 Streak Scoreboard", unsafe_allow_html=True)
-
-        all_cats_flat = []
-        for sphere in spheres:
-            for cat in db.get_categories(uid, sphere["id"]):
-                cat["sphere_name"]  = sphere.get("name", "")
-                cat["sphere_emoji"] = sphere.get("emoji", "")
-                all_cats_flat.append(cat)
-
-        if all_cats_flat:
-            # Sort by streak descending
-            all_cats_flat.sort(key=lambda c: c.get("streak", 0), reverse=True)
-            cols = st.columns(min(len(all_cats_flat), 3))
-            for idx, cat in enumerate(all_cats_flat):
-                with cols[idx % 3]:
-                    ui.render_streak_card(cat)
+        # Today's tasks + scoreboard: isolated fragment (optimistic UI + async saves)
+        render_dashboard_tasks_and_scoreboard(uid, dname, today)
 
         # ── Heatmaps ─────────────────────────────────────────────────
         st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
