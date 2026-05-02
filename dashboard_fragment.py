@@ -178,6 +178,10 @@ def make_toggle_cb(
 
         _apply_optimistic_cat(cat_state_key, desired, remaining, cat_before)
 
+        # Instant feedback — does not wait for Firestore (persist runs in background).
+        if desired:
+            st.balloons()
+
         threading.Thread(
             target=_persist_job,
             args=(
@@ -197,14 +201,11 @@ def make_toggle_cb(
 
 
 def _process_drain(uid: str, today: str, events: list[tuple]) -> None:
-    celebrate = False
     for ev in events:
         if ev[0] == "ok":
-            _, sid, cid, cat_row, freeze_aw, did_check = ev
+            _, sid, cid, cat_row, freeze_aw, _did_check = ev
             st.session_state[dash_cat_key(sid, cid)] = cat_row
             _patch_bundle_item(uid, today, sid, cid, cat_row)
-            if did_check:
-                celebrate = True
             if freeze_aw:
                 st.success(
                     f"🎉 You earned a new ❄️ Freeze for **{cat_row.get('name', 'this category')}**! "
@@ -215,8 +216,6 @@ def _process_drain(uid: str, today: str, events: list[tuple]) -> None:
             cb_key = dash_cb_key(uid, today, sid, cid, tid)
             st.session_state[cb_key] = rollback_checkbox
             st.toast(f"Could not save your change: {msg}", icon="⚠️")
-    if celebrate:
-        st.balloons()
 
 
 @st.fragment
