@@ -140,11 +140,42 @@ with tab_dash:
                 # Reconcile streak (handles missed days automatically)
                 cat = sl.reconcile_streak(uid, sid, cat)
 
-                completion_doc    = db.get_completion(uid, sid, cid, today)
-                completed_ids     = completion_doc.get("completed_tasks", [])
-                is_done_today     = len(completed_ids) > 0
+                completion_doc = db.get_completion(uid, sid, cid, today)
+                completed_ids = db.completion_ids_for_active_tasks(
+                    list(completion_doc.get("completed_tasks", [])),
+                    tasks,
+                )
 
-                card_color = COLORS["success"] if is_done_today else COLORS["border"]
+                # Checklist + streak updates MUST run before st.expander(...): Streamlit
+                # evaluates the expander label before the body runs, so record_completion_for_today
+                # must happen first or the header shows a stale streak until the next rerun.
+                newly_checked: list[str] = []
+                newly_unchecked: list[str] = []
+                if tasks:
+                    key_pfx = f"dash_{sid}_{cid}"
+                    newly_checked, newly_unchecked = ui.render_task_checklist(
+                        tasks, completed_ids, key_prefix=key_pfx
+                    )
+
+                    for tid in newly_checked:
+                        db.set_task_completion(uid, sid, cid, tid, today, True)
+                        completed_ids.append(tid)
+
+                    for tid in newly_unchecked:
+                        db.set_task_completion(uid, sid, cid, tid, today, False)
+                        completed_ids.remove(tid)
+
+                    if newly_checked:
+                        cat = sl.record_completion_for_today(uid, sid, cat)
+                        any_new_completion = True
+
+                    if newly_unchecked:
+                        cat = sl.check_if_still_active_today(
+                            uid, sid, cid, completed_ids, cat
+                        )
+
+                is_done_today = len(completed_ids) > 0
+
                 with st.expander(
                     f"{cat_title} — "
                     f"{sl.streak_emoji(cat.get('streak',0))} **{cat.get('streak',0)} {cadence_label} streak**",
@@ -154,39 +185,14 @@ with tab_dash:
                         st.caption("No tasks yet — add some in the Habits tab!")
                         continue
 
-                    key_pfx = f"dash_{sid}_{cid}"
-                    newly_checked, newly_unchecked = ui.render_task_checklist(
-                        tasks, completed_ids, key_prefix=key_pfx
-                    )
-
-                    # Process newly checked
-                    for tid in newly_checked:
-                        db.set_task_completion(uid, sid, cid, tid, today, True)
-                        completed_ids.append(tid)
-
-                    # Process newly unchecked
-                    for tid in newly_unchecked:
-                        db.set_task_completion(uid, sid, cid, tid, today, False)
-                        completed_ids.remove(tid)
-
-                    # After any change, refresh streak
-                    if newly_checked:
-                        cat = sl.record_completion_for_today(uid, sid, cat)
-                        any_new_completion = True
-                        if cat.get("freeze_awarded_today"):
-                            st.success(
-                                f"🎉 You earned a new ❄️ Freeze for **{cat['name']}**! "
-                                f"You now have {cat['freeze_count']} freezes."
-                            )
-
-                    if newly_unchecked:
-                        cat = sl.check_if_still_active_today(
-                            uid, sid, cid, completed_ids, cat
-                        )
-
-                    # Progress bar: tasks done / total
                     pct = len(completed_ids) / len(tasks) if tasks else 0
                     st.progress(pct, text=f"{len(completed_ids)}/{len(tasks)} tasks done today")
+
+                    if newly_checked and cat.get("freeze_awarded_today"):
+                        st.success(
+                            f"🎉 You earned a new ❄️ Freeze for **{cat['name']}**! "
+                            f"You now have {cat['freeze_count']} freezes."
+                        )
 
         # Celebrate!
         if any_new_completion:
@@ -346,18 +352,27 @@ with tab_habits:
 
                     # Add task form
                     with st.form(f"add_task_{sid}_{cid}"):
-                        t1, t2 = st.columns([5, 1])
-                        with t1:
-                            task_name = st.text_input(
-                                "New Task", placeholder="e.g. Eat 100g protein",
-                                key=f"tn_{sid}_{cid}", label_visibility="collapsed"
-                            )
-                        with t2:
-                            task_submit = st.form_submit_button("Add Task")
+                        task_name = st.text_input(
+                            "New Task",
+                            placeholder="e.g. Eat 100g protein",
+                            key=f"tn_{sid}_{cid}",
+                        )
+                        one_off = st.checkbox(
+                            "One-off task (expires after tonight midnight IST; stays in history once archived)",
+                            value=False,
+                            key=f"oneoff_{sid}_{cid}",
+                        )
+                        task_submit = st.form_submit_button("Add Task")
 
                         if task_submit:
                             if task_name.strip():
-                                db.create_task(uid, sid, cid, task_name.strip())
+                                db.create_task(
+                                    uid,
+                                    sid,
+                                    cid,
+                                    task_name.strip(),
+                                    repeating=not one_off,
+                                )
                                 st.success("Task added!")
                                 st.rerun()
 
@@ -365,7 +380,16 @@ with tab_habits:
                     for task in tasks:
                         tcol1, tcol2 = st.columns([8, 1])
                         with tcol1:
-                            st.markdown(f"&nbsp;&nbsp;&nbsp;• {task.get('name','')}", unsafe_allow_html=True)
+                            suffix = ""
+                            if task.get("repeating", True) is False:
+                                suffix = (
+                                    "<span style='font-size:0.78rem;color:#7A8B95;margin-left:6px'>"
+                                    "(one-off · until midnight IST)</span>"
+                                )
+                            st.markdown(
+                                f"&nbsp;&nbsp;&nbsp;• {task.get('name','')}{suffix}",
+                                unsafe_allow_html=True,
+                            )
                         with tcol2:
                             if st.button("✕", key=f"del_task_{sid}_{cid}_{task['id']}"):
                                 db.delete_task(uid, sid, cid, task["id"])

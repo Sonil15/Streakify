@@ -1,0 +1,29 @@
+name: Expire one-off tasks
+
+# Daily just after midnight IST: 00:15 IST = 18:45 UTC (previous calendar day in UTC)
+on:
+  schedule:
+    - cron: "45 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  expire-one-off:
+    name: Archive expired one-off tasks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run expire job
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: python expire_one_off_tasks_job.py

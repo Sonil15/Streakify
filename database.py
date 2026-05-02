@@ -6,7 +6,7 @@ Firestore hierarchy:
   users/{uid}
     .spheres/{sphereId}
       .categories/{categoryId}
-        .tasks/{taskId}
+        .tasks/{taskId}             ← repeating default True; one-offs use last_active_date + archived
         .completions/{YYYY-MM-DD}   ← which task IDs were ticked that day
 """
 
@@ -202,22 +202,85 @@ def _tasks_ref(uid: str, sphere_id: str, category_id: str):
 
 
 def get_tasks(uid: str, sphere_id: str, category_id: str) -> list[dict]:
+    """
+    Active tasks only (archived one-offs are hidden from UI).
+    Legacy docs without `repeating` are migrated to repeating=True once.
+    """
     docs = _tasks_ref(uid, sphere_id, category_id).order_by("created_at").stream()
     result = []
     for doc in docs:
         d = doc.to_dict()
         d["id"] = doc.id
+        if d.get("archived"):
+            continue
+        if d.get("repeating") is None:
+            doc.reference.update({"repeating": True, "archived": False})
+            d["repeating"] = True
         result.append(d)
     return result
 
 
-def create_task(uid: str, sphere_id: str, category_id: str, name: str) -> str:
+def create_task(
+    uid: str,
+    sphere_id: str,
+    category_id: str,
+    name: str,
+    *,
+    repeating: bool = True,
+) -> str:
     ref = _tasks_ref(uid, sphere_id, category_id).document()
-    ref.set({
+    payload = {
         "name":       name,
         "created_at": firestore.SERVER_TIMESTAMP,
-    })
+        "repeating":  repeating,
+        "archived":   False,
+    }
+    if not repeating:
+        payload["last_active_date"] = today_ist()
+    ref.set(payload)
     return ref.id
+
+
+def completion_ids_for_active_tasks(
+    completed_task_ids: list[str],
+    active_tasks: list[dict],
+) -> list[str]:
+    """Drop completion IDs that belong to archived/removed tasks so UI math stays consistent."""
+    allowed = {t["id"] for t in active_tasks}
+    return [tid for tid in completed_task_ids if tid in allowed]
+
+
+def expire_one_off_tasks_for_user(uid: str) -> int:
+    """
+    Mark non-repeating tasks as archived after their IST calendar day has ended.
+    Documents stay under tasks/ for history (archived=True); no deletion.
+    Returns number of tasks archived this run.
+    """
+    today_s = today_ist()
+    archived_n = 0
+    for sphere in get_spheres(uid):
+        sid = sphere["id"]
+        for cat in get_categories(uid, sid):
+            cid = cat["id"]
+            for doc in _tasks_ref(uid, sid, cid).stream():
+                d = doc.to_dict()
+                if d.get("archived"):
+                    continue
+                # Legacy docs without `repeating` behave like repeating — never archive here.
+                if d.get("repeating", True):
+                    continue
+                last = d.get("last_active_date")
+                if not last or last >= today_s:
+                    continue
+                doc.reference.update(
+                    {
+                        "archived":       True,
+                        "archived_at":    firestore.SERVER_TIMESTAMP,
+                        "archive_reason": "one_off_expired",
+                    }
+                )
+                archived_n += 1
+    return archived_n
 
 
 def delete_task(uid: str, sphere_id: str, category_id: str, task_id: str):

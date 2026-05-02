@@ -169,7 +169,7 @@ def apply_generated_structure(uid: str, generated: dict[str, Any]) -> dict[str, 
                 if key in existing_task_names:
                     summary["tasks_skipped_existing"] += 1
                     continue
-                db.create_task(uid, sid, cid, task_name)
+                db.create_task(uid, sid, cid, task_name, repeating=True)
                 existing_task_names.add(key)
                 summary["tasks_created"] += 1
 
