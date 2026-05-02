@@ -21,7 +21,10 @@ import database as db
 import streak_logic as sl
 import ui_components as ui
 import ai_planner
-from dashboard_fragment import render_dashboard_tasks_and_scoreboard
+from dashboard_fragment import (
+    invalidate_dashboard_bundle,
+    render_dashboard_tasks_and_scoreboard,
+)
 from styles import inject_custom_css, COLORS
 
 # ---------------------------------------------------------------------------
@@ -163,6 +166,7 @@ with tab_habits:
                 new_sphere_emoji = "" if new_sphere_emoji_choice == "None" else new_sphere_emoji_choice
                 db.create_sphere(uid, new_sphere_name.strip(), new_sphere_emoji)
                 st.success(f"Sphere '{new_sphere_name}' created! 🎉")
+                invalidate_dashboard_bundle()
                 st.rerun()
 
     st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
@@ -184,6 +188,7 @@ with tab_habits:
                     if st.button("🗑️", key=f"del_sphere_{sid}", help="Delete this sphere"):
                         db.delete_sphere(uid, sid)
                         st.success(f"Sphere '{sname}' deleted.")
+                        invalidate_dashboard_bundle()
                         st.rerun()
 
                 # ── Add category ────────────────────────────────────
@@ -226,6 +231,7 @@ with tab_habits:
                                     cat_emoji,
                                 )
                             st.success(f"Category '{cat_name}' added!")
+                            invalidate_dashboard_bundle()
                             st.rerun()
 
                 # ── Existing categories ──────────────────────────────
@@ -273,6 +279,7 @@ with tab_habits:
                                     repeating=not one_off,
                                 )
                                 st.success("Task added!")
+                                invalidate_dashboard_bundle()
                                 st.rerun()
 
                     # List existing tasks
@@ -292,12 +299,14 @@ with tab_habits:
                         with tcol2:
                             if st.button("✕", key=f"del_task_{sid}_{cid}_{task['id']}"):
                                 db.delete_task(uid, sid, cid, task["id"])
+                                invalidate_dashboard_bundle()
                                 st.rerun()
 
                     # Delete category button
                     if st.button(f"🗑️ Remove '{cname}'", key=f"del_cat_{sid}_{cid}"):
                         db.delete_category(uid, sid, cid)
                         st.success(f"Category '{cname}' deleted.")
+                        invalidate_dashboard_bundle()
                         st.rerun()
 
                     st.markdown("<hr style='border-color:#F0F0F0; margin:10px 0;'>", unsafe_allow_html=True)
@@ -417,6 +426,7 @@ with tab_plan:
                     st.session_state.pop("ai_plan_generated", None)
                     st.session_state.pop("ai_plan_preview", None)
                     st.session_state.pop("ai_plan_instruction", None)
+                    invalidate_dashboard_bundle()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Apply failed: {e}")
